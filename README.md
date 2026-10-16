@@ -1,6 +1,6 @@
-# 💎 BillingPro | Next-Gen POS & Inventory Engine
+# 💎 InvoicePro | Next-Gen GST Invoicing & Inventory Engine
 
-**BillingPro** is a premium, high-performance Point of Sale (POS) and Inventory Management system engineered for modern retailers. Built with **Next.js 15**, it combines enterprise-grade functionality with a sleek, app-like user interface that works seamlessly on mobile and desktop.
+**InvoicePro** is a premium, high-performance Point of Sale (POS), GST Invoicing, and Inventory Management system engineered for modern retailers. Built with **Next.js 15**, it combines enterprise-grade functionality with a sleek, app-like user interface that works seamlessly on mobile and desktop.
 
 ![Dashboard Preview](https://img.shields.io/badge/Interface-Premium_Glassmorphism-blue?style=for-the-badge)
 ![Security](https://img.shields.io/badge/Data_Privacy-Local_First-emerald?style=for-the-badge)
@@ -64,7 +64,7 @@
 
 ## 🛡️ Privacy & Ghost Protocol
 
-BillingPro operates on the **Ghost Protocol**. No business data, customer information, or sales logs are ever transmitted to external servers. All data remains within your browser's encrypted local vault.
+InvoicePro operates on the **Ghost Protocol**. No business data, customer information, or sales logs are ever transmitted to external servers. All data remains within your browser's encrypted local vault.
 
 ## 👤 Development Credits
 

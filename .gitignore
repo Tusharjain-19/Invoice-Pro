@@ -19,10 +19,14 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
 *.pem
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 # debug
 npm-debug.log*
@@ -31,7 +35,9 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
+.env
+.env.*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +45,28 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# package manager locks (keep package-lock.json, ignore others if not used)
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# Gemini / AI tools
+.gemini/

@@ -1,207 +1,361 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
 
-:root {
-  /* Premium Midnight Glass Tokens */
-  --app-bg: #050505;
-  --app-surface: rgba(20, 20, 25, 0.75);
-  --app-surface-raised: rgba(35, 35, 45, 0.9);
-  --app-primary: #3b82f6; /* Electric Blue */
-  --app-primary-glow: rgba(59, 130, 246, 0.45);
-  --app-accent: #10b981; /* Emerald */
-  --app-fg: #ffffff;
-  --app-fg-muted: #94a3b8;
-  --app-border: rgba(255, 255, 255, 0.1);
-  --app-nav-bg: rgba(10, 10, 15, 0.95);
-  --app-radius: 28px;
-  --app-font-body: 'Plus Jakarta Sans', sans-serif;
-  --app-font-title: 'Space Grotesk', sans-serif;
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Colors based on Professional SaaS Design system */
+  --color-background: #f8f9ff;
+  --color-foreground: #0b1c30;
+  
+  --color-card: #ffffff;
+  --color-card-foreground: #0b1c30;
+  
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0b1c30;
+  
+  --color-primary: #00288e;
+  --color-primary-foreground: #ffffff;
+  --color-primary-container: #1e40af;
+  --color-on-primary-container: #a8b8ff;
+  
+  --color-secondary: #565e74;
+  --color-secondary-foreground: #ffffff;
+  --color-secondary-container: #dae2fd;
+  --color-on-secondary-container: #5c647a;
+  
+  --color-muted: #eff4ff;
+  --color-muted-foreground: #444653;
+  
+  --color-accent: #e5eeff;
+  --color-accent-foreground: #0b1c30;
+  
+  --color-destructive: #ba1a1a;
+  --color-destructive-foreground: #ffffff;
+  
+  --color-border: #c4c5d5;
+  --color-input: #c4c5d5;
+  --color-ring: #00288e;
+  
+  --color-success: #16A34A;
+  --color-warning: #F59E0B;
+  --color-info: #00288e;
+
+  --color-sidebar: #f8f9ff;
+  --color-sidebar-foreground: #0b1c30;
+  --color-sidebar-primary: #00288e;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #eff4ff;
+  --color-sidebar-border: #c4c5d5;
+
+  --color-chart-1: #00288e;
+  --color-chart-2: #16A34A;
+  --color-chart-3: #F59E0B;
+  --color-chart-4: #a8b8ff;
+  --color-chart-5: #ba1a1a;
+
+  /* Shapes: Capped to sharp rectangular solid edges globally */
+  --radius-3xl: 8px;
+  --radius-2xl: 6px;
+  --radius-xl: 6px;
+  --radius-lg: 4px;
+  --radius-md: 4px;
+  --radius-sm: 2px;
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-fade-in: fade-in 0.4s ease-out;
+  --animate-slide-up: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-[data-theme='light'] {
-  --app-bg: #f8fafc;
-  --app-surface: rgba(255, 255, 255, 0.85);
-  --app-surface-raised: #ffffff;
-  --app-primary: #2563eb;
-  --app-primary-glow: rgba(37, 99, 235, 0.2);
-  --app-accent: #059669;
-  --app-fg: #0f172a;
-  --app-fg-muted: #64748b;
-  --app-border: rgba(0, 0, 0, 0.08);
-  --app-nav-bg: rgba(255, 255, 255, 0.98);
+/* Dark theme matching midnight slate palette */
+.dark {
+  --color-background: #0b1c30;
+  --color-foreground: #eaf1ff;
+  
+  --color-card: #152438;
+  --color-card-foreground: #eaf1ff;
+  
+  --color-popover: #152438;
+  --color-popover-foreground: #eaf1ff;
+  
+  --color-primary: #b8c4ff;
+  --color-primary-foreground: #001453;
+  --color-primary-container: #173bab;
+  --color-on-primary-container: #dde1ff;
+  
+  --color-secondary: #bec6e0;
+  --color-secondary-foreground: #131b2e;
+  --color-secondary-container: #3f465c;
+  --color-on-secondary-container: #dae2fd;
+  
+  --color-muted: #1e2d42;
+  --color-muted-foreground: #a6b7d1;
+  
+  --color-accent: #1e2d42;
+  --color-accent-foreground: #eaf1ff;
+  
+  --color-destructive: #ba1a1a;
+  --color-destructive-foreground: #ffffff;
+  
+  --color-border: #2c3e56;
+  --color-input: #2c3e56;
+  --color-ring: #b8c4ff;
+  
+  --color-success: #16A34A;
+  --color-warning: #F59E0B;
+  --color-info: #b8c4ff;
+
+  --color-sidebar: #0f1f34;
+  --color-sidebar-foreground: #eaf1ff;
+  --color-sidebar-primary: #b8c4ff;
+  --color-sidebar-primary-foreground: #001453;
+  --color-sidebar-accent: #1e2d42;
+  --color-sidebar-border: #2c3e56;
+
+  --color-chart-1: #b8c4ff;
+  --color-chart-2: #16A34A;
+  --color-chart-3: #F59E0B;
+  --color-chart-4: #3f465c;
+  --color-chart-5: #ba1a1a;
 }
 
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  -webkit-tap-highlight-color: transparent;
-}
-
-body {
-  background-color: #000;
-  color: var(--app-fg);
-  font-family: var(--app-font-body);
-  min-height: 100dvh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  overflow: hidden;
-}
-
-.glass {
-  backdrop-filter: blur(25px);
-  -webkit-backdrop-filter: blur(25px);
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-}
-
-.app-container {
-  width: 100%;
-  max-width: 430px;
-  height: 100dvh;
-  background: var(--app-bg);
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-@media (min-width: 431px) {
-  .app-container {
-    border-radius: 48px;
-    height: 92dvh;
-    border: 10px solid #1a1a1a;
-    box-shadow: 0 50px 100px -20px rgba(0,0,0,0.6);
-    margin: 20px;
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
   }
 }
 
-.app-viewport {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-bottom: 120px;
-  padding-top: 80px;
-  scrollbar-width: none;
-}
-.app-viewport::-webkit-scrollbar { display: none; }
-
-.app-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 80px;
-  padding: 0 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  background: linear-gradient(to bottom, var(--app-nav-bg) 70%, transparent);
-  z-index: 1000;
-  border-bottom: 1px solid var(--app-border);
+.pulse-green {
+  animation: pulse-ring 2s infinite;
 }
 
-.app-header h1 {
-  font-family: var(--app-font-title);
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
 }
 
-.app-bottom-nav {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: calc(85px + env(safe-area-inset-bottom, 0px));
-  background: var(--app-nav-bg);
-  backdrop-filter: blur(35px);
-  -webkit-backdrop-filter: blur(35px);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  z-index: 1000;
-  border-top: 1px solid var(--app-border);
-  padding: 0 12px;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom, 12px));
-  box-shadow: 0 -15px 40px rgba(0,0,0,0.4);
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
 }
 
-.app-card {
-  border-radius: var(--app-radius);
-  padding: 18px;
-  margin: 12px 16px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.05);
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.app-btn-primary {
-  height: 58px;
-  border-radius: 20px;
-  background: var(--app-primary);
-  color: #fff;
-  border: none;
-  font-weight: 700;
-  font-size: 0.95rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  cursor: pointer;
-  width: 100%;
-  box-shadow: 0 8px 24px var(--app-primary-glow);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-}
-
-.app-input {
-  width: 100%;
-  height: 52px;
-  background: var(--app-surface-raised);
-  border: 1px solid var(--app-border);
-  border-radius: 16px;
-  padding: 0 18px;
-  color: var(--app-fg);
-  font-size: 0.95rem;
-  outline: none;
-  font-family: inherit;
-  transition: border 0.3s ease;
-}
-
-.app-input:focus {
-  border-color: var(--app-primary);
-}
-
-.fade-in {
-  animation: slideUpFade 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-}
-
-@keyframes slideUpFade {
-  from { opacity: 0; transform: translateY(12px); }
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Receipt Style Preview */
+/* ---------- Base Styles ---------- */
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- Scrollbar ---------- */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* ---------- Print Styles ---------- */
+
+@media print {
+  /* Force all ancestor elements of the print area to expand and not clip */
+  html, body, #root, main, .app-viewport, 
+  .grid, [class*="grid-cols-"], [class*="lg:grid-cols-"],
+  [class*="col-span-"], [class*="lg:col-span-"],
+  [class*="h-screen"], [class*="overflow-hidden"], [class*="flex-col"], [class*="lg:pl-"] {
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important;
+  }
+
+  /* Specifically hide non-printing UI parts */
+  .no-print, header, aside, button, nav, footer, [class*="sticky"], [class*="fixed"], .lg\:col-span-4 {
+    display: none !important;
+  }
+
+  /* Style preview containers to display nicely in print */
+  .no-print-margin {
+    display: block !important;
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .print-full-width {
+    display: block !important;
+    width: 100% !important;
+    overflow: visible !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* Print Page setup to remove browser headers/footers of page info and links */
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  body {
+    margin: 1.0cm !important;
+  }
+
+  /* Invoice Print Area specific styles */
+  #invoice-print-area {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 27cm !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: black !important;
+  }
+}
+
+.print-only {
+  display: none;
+}
+
+/* ---------- Focus Styles ---------- */
+
+*:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- Loading Skeleton ---------- */
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.skeleton {
+  animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  background-color: var(--color-muted);
+  border-radius: var(--radius-md);
+}
+
+/* ---------- Glass Effect ---------- */
+
+.glass {
+  background: color-mix(in srgb, var(--color-card) 70%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+}
+
+/* ---------- Receipt Print Styles ---------- */
+
 .receipt-preview {
   background: #fff;
   color: #000;
-  padding: 32px 24px;
-  border-radius: 4px;
+  padding: 24px 16px;
   font-family: 'Courier New', Courier, monospace;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-  position: relative;
+  font-size: 12px;
 }
 
-.receipt-preview::after {
-  content: '';
-  position: absolute;
-  bottom: -10px;
-  left: 0;
-  right: 0;
-  height: 10px;
-  background-image: radial-gradient(circle, transparent, transparent 50%, #fff 50%, #fff);
-  background-size: 20px 20px;
-  background-position: 0 -10px;
+/* ---------- Hide Input Number Spin Buttons ---------- */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Enforce crisp rectangular solid-edge aesthetic for non-circular shapes */
+.rounded-3xl:not(.rounded-full) {
+  border-radius: 8px !important;
+}
+.rounded-2xl:not(.rounded-full) {
+  border-radius: 6px !important;
+}
+.rounded-xl:not(.rounded-full) {
+  border-radius: 6px !important;
+}
+.rounded-lg:not(.rounded-full) {
+  border-radius: 4px !important;
+}
+.rounded-md:not(.rounded-full) {
+  border-radius: 4px !important;
+}
+.rounded-sm:not(.rounded-full) {
+  border-radius: 2px !important;
+}
+

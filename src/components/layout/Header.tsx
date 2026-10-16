@@ -1,0 +1,375 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '@/db';
+import { useAppStore } from '@/store/useAppStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import {
+  Search,
+  Menu,
+  Bell,
+  Plus,
+  ChevronDown,
+  Building2,
+  Calendar,
+  Settings as SettingsIcon,
+  FileText,
+  Package,
+  UserPlus,
+  Wallet,
+  Percent,
+  Truck,
+} from 'lucide-react';
+import { InvoiceProMark } from './Logo';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import Link from 'next/link';
+import { Badge } from '@/components/ui/badge';
+
+const PAGE_TITLES: Record<string, string> = {
+  '/': 'Dashboard',
+  '/products': 'Products',
+  '/customers': 'Customers',
+  '/suppliers': 'Suppliers',
+  '/invoices': 'Invoices',
+  '/invoices/create': 'Create Invoice',
+  '/loans': 'Loans & EMI',
+  '/expenses': 'Expenses',
+  '/reports': 'Reports',
+  '/settings': 'Settings',
+};
+
+export function Header() {
+  const pathname = usePathname();
+  const { setSidebarOpen, setGlobalSearchOpen } = useAppStore();
+  const { settings } = useSettingsStore();
+
+  const lowStockCount = useLiveQuery(async () => {
+    return await db.products.filter(p => p.isActive && p.currentStock <= p.minimumStock).count();
+  }) ?? 0;
+
+  const overdueCount = useLiveQuery(async () => {
+    const now = Date.now();
+    return await db.invoices.filter(inv => inv.status !== 'paid' && inv.dueDate !== null && inv.dueDate < now).count();
+  }) ?? 0;
+
+  const notifications = [];
+  if (lowStockCount > 0) {
+    notifications.push({
+      id: 'low-stock',
+      title: 'Low Stock Alert',
+      desc: `${lowStockCount} ${lowStockCount === 1 ? 'product is' : 'products are'} running low in stock.`,
+      time: 'Live',
+      read: false,
+    });
+  }
+  if (overdueCount > 0) {
+    notifications.push({
+      id: 'overdue',
+      title: 'Overdue Invoices',
+      desc: `${overdueCount} ${overdueCount === 1 ? 'invoice is' : 'invoices are'} currently overdue.`,
+      time: 'Live',
+      read: false,
+    });
+  }
+
+  const pageTitle = Object.entries(PAGE_TITLES).reduce((title, [path, name]) => {
+    if (path === '/' && pathname === '/') return name;
+    if (path !== '/' && pathname.startsWith(path)) return name;
+    return title;
+  }, 'InvoicePro');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      document.title = `${pageTitle} | InvoicePro`;
+    }
+  }, [pageTitle]);
+
+  const getFinancialYear = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    if (month >= 3) {
+      return `FY ${year}-${(year + 1).toString().slice(-2)}`;
+    } else {
+      return `FY ${year - 1}-${year.toString().slice(-2)}`;
+    }
+  };
+
+  const breadcrumbs = pathname
+    .split('/')
+    .filter(Boolean)
+    .map((seg, idx, arr) => {
+      const url = '/' + arr.slice(0, idx + 1).join('/');
+      return {
+        label: seg.charAt(0).toUpperCase() + seg.slice(1),
+        url,
+        active: idx === arr.length - 1,
+      };
+    });
+
+  const unreadNotificationsCount = notifications.filter(n => !n.read).length;
+
+  return (
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border bg-card/90 backdrop-blur-md px-6">
+      {/* Left: Breadcrumbs, Title & Financial Year Pill */}
+      <div className="flex items-center gap-4 min-w-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="lg:hidden shrink-0 rounded-lg"
+          onClick={() => setSidebarOpen(true)}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground/80 font-medium">
+            <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
+            {breadcrumbs.map((crumb) => (
+              <React.Fragment key={crumb.url}>
+                <span>/</span>
+                <Link
+                  href={crumb.url}
+                  className={crumb.active ? 'text-foreground font-semibold' : 'hover:text-foreground transition-colors'}
+                >
+                  {crumb.label}
+                </Link>
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="flex items-center gap-3 mt-0.5">
+            <h1 className="text-xl font-bold tracking-tight truncate text-foreground">{pageTitle}</h1>
+            <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px] font-medium py-0.5 px-2.5 rounded-lg">
+              <Calendar className="h-3 w-3 mr-1 shrink-0" />
+              {getFinancialYear()}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      {/* Center: Sleek Compact Global Search */}
+      <div className="hidden md:flex w-44 lg:w-52 shrink-0 relative">
+        <Button
+          variant="outline"
+          className="w-full flex items-center justify-between text-muted-foreground hover:text-foreground bg-muted/30 border-border/40 hover:bg-muted/50 rounded-full px-3 h-8.5 font-normal transition-all"
+          onClick={() => setGlobalSearchOpen(true)}
+        >
+          <div className="flex items-center gap-1.5">
+            <Search className="h-3 w-3 text-muted-foreground/80" />
+            <span className="text-xs">Search...</span>
+          </div>
+          <kbd className="pointer-events-none hidden h-4 select-none items-center gap-0.5 rounded border bg-muted/80 px-1 font-mono text-[9px] font-semibold text-muted-foreground/70 sm:flex">
+            <span>⌘</span>K
+          </kbd>
+        </Button>
+      </div>
+
+      {/* Right: Company Switcher, Quick Create, Notifications, Avatar */}
+      <div className="flex items-center gap-2.5 shrink-0">
+        {/* Company switcher */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="hidden sm:flex items-center gap-2 hover:bg-muted/50 rounded-xl px-3 h-9 font-bold border border-border/40 text-xs">
+              <Building2 className="h-3.5 w-3.5 text-primary" />
+              <span className="max-w-28 truncate">{settings.companyName || 'My Business'}</span>
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56 rounded-xl p-1.5 shadow-xl border border-border/50 bg-card">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Select Company</DropdownMenuLabel>
+            <DropdownMenuSeparator className="my-1 border-border/40" />
+            <DropdownMenuItem className="flex items-center gap-2 rounded-lg cursor-pointer">
+              <Building2 className="h-3.5 w-3.5 text-primary" />
+              <div className="flex flex-col min-w-0">
+                <span className="font-semibold text-xs truncate">{settings.companyName || 'My Business'}</span>
+                <span className="text-[9px] text-muted-foreground">Primary Branch</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="my-1 border-border/40" />
+            <DropdownMenuItem asChild className="rounded-lg cursor-pointer">
+              <Link href="/settings" className="flex items-center gap-2 w-full text-xs">
+                <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Manage Companies</span>
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Quick create - Refined Premium Gradient Button & Rich Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="default"
+              size="sm"
+              className="h-9 rounded-xl gap-2 font-bold text-xs bg-linear-to-r from-primary to-blue-600 hover:from-primary/95 hover:to-blue-700 text-white px-3.5 shadow-sm shadow-primary/25 border border-primary/30 transition-colors"
+            >
+              <div className="h-4 w-4 rounded-md bg-white/20 flex items-center justify-center">
+                <Plus className="h-3 w-3 stroke-3" />
+              </div>
+              <span className="hidden sm:inline font-bold">Quick Create</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72 rounded-2xl p-2 shadow-2xl border border-border/70 bg-popover/95 backdrop-blur-xl">
+            <div className="px-3 py-2 border-b border-border/40 mb-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">Quick Actions</span>
+              <span className="text-[11px] text-muted-foreground/80">Add records & transactions in 1-click</span>
+            </div>
+            
+            <DropdownMenuItem asChild className="p-2 rounded-xl cursor-pointer hover:bg-muted/70 transition-colors group">
+              <Link href="/invoices/create" className="flex items-center gap-3 w-full">
+                <div className="h-9 w-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <FileText className="h-4.5 w-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-foreground">New Tax Invoice</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded border border-border/40">⌘I</kbd>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground block truncate">GST B2B, B2C & Retail Bill</span>
+                </div>
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem asChild className="p-2 rounded-xl cursor-pointer hover:bg-muted/70 transition-colors group">
+              <Link href="/products?action=add" className="flex items-center gap-3 w-full">
+                <div className="h-9 w-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Package className="h-4.5 w-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-foreground">Add Product & Stock</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded border border-border/40">⌘P</kbd>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground block truncate">Inventory item, HSN & GST rate</span>
+                </div>
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem asChild className="p-2 rounded-xl cursor-pointer hover:bg-muted/70 transition-colors group">
+              <Link href="/customers?action=add" className="flex items-center gap-3 w-full">
+                <div className="h-9 w-9 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <UserPlus className="h-4.5 w-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-foreground">Register Customer</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded border border-border/40">⌘C</kbd>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground block truncate">Buyer ledger, KYC & GSTIN</span>
+                </div>
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem asChild className="p-2 rounded-xl cursor-pointer hover:bg-muted/70 transition-colors group">
+              <Link href="/expenses?action=add" className="flex items-center gap-3 w-full">
+                <div className="h-9 w-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Wallet className="h-4.5 w-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-foreground">Record Expense</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded border border-border/40">⌘E</kbd>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground block truncate">Expenditure with bill proof scan</span>
+                </div>
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem asChild className="p-2 rounded-xl cursor-pointer hover:bg-muted/70 transition-colors group">
+              <Link href="/loans" className="flex items-center gap-3 w-full">
+                <div className="h-9 w-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Percent className="h-4.5 w-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-foreground">Disburse EMI / Loan</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded border border-border/40">⌘L</kbd>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground block truncate">Customer loan & installment khata</span>
+                </div>
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem asChild className="p-2 rounded-xl cursor-pointer hover:bg-muted/70 transition-colors group">
+              <Link href="/suppliers" className="flex items-center gap-3 w-full">
+                <div className="h-9 w-9 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Truck className="h-4.5 w-4.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-foreground">Add Vendor / Supplier</span>
+                    <kbd className="text-[9px] font-mono text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded border border-border/40">⌘S</kbd>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground block truncate">Supplier ledger & WhatsApp sync</span>
+                </div>
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Notifications */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl relative hover:bg-muted/50 border border-border/40">
+              <Bell className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-80 rounded-xl p-2 shadow-2xl border border-border/50 bg-card">
+            <div className="flex items-center justify-between px-2 py-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notifications</span>
+              {unreadNotificationsCount > 0 && (
+                <span className="text-[10px] bg-red-50 text-red-500 dark:bg-red-950/30 dark:text-red-400 font-bold px-1.5 py-0.5 rounded-md">{unreadNotificationsCount} New</span>
+              )}
+            </div>
+            <DropdownMenuSeparator className="my-1.5 border-border/40" />
+            <div className="space-y-1">
+              {notifications.length === 0 ? (
+                <div className="p-6 text-center text-xs text-muted-foreground">
+                  No new alerts or notifications.
+                </div>
+              ) : (
+                notifications.map((n) => (
+                  <DropdownMenuItem key={n.id} asChild className="flex flex-col items-start gap-1 p-2 rounded-lg cursor-pointer hover:bg-muted/40 transition-colors">
+                    <Link href={n.id === 'low-stock' ? '/products' : '/invoices'} className="w-full">
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="font-semibold text-xs text-foreground">{n.title}</span>
+                        <span className="text-[9px] text-muted-foreground ml-auto">{n.time}</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-normal">{n.desc}</p>
+                    </Link>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Separator orientation="vertical" className="h-5 bg-border/40 hidden sm:block" />
+
+        {/* Brand / User Avatar */}
+        <div className="h-9 w-9 rounded-xl overflow-hidden border border-border/50 shrink-0 flex items-center justify-center bg-card shadow-xs">
+          {settings.companyLogo ? (
+            <img src={settings.companyLogo} alt="Logo" className="h-full w-full object-contain p-1" />
+          ) : (
+            <InvoiceProMark size={32} />
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}

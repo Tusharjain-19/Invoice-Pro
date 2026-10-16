@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Tax Invoice Template</title>
+    <style>
+        /* Base Reset & Typography */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10px;
+            color: #000;
+            line-height: 1.4;
+            background-color: #f0f0f0;
+            padding: 20px;
+        }
+        .invoice-wrapper {
+            max-width: 850px;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid #000; /* Main outer border */
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        /* Utility Classes */
+        .flex { display: flex; }
+        .flex-col { display: flex; flex-direction: column; }
+        .w-50 { width: 50%; }
+        .border-top { border-top: 1px solid #000; }
+        .border-bottom { border-bottom: 1px solid #000; }
+        .border-right { border-right: 1px solid #000; }
+        .p-5 { padding: 5px; }
+        .p-10 { padding: 10px; }
+        .bold { font-weight: bold; }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .text-blue { color: #003399; }
+
+        /* Header Section */
+        .header-top {
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 10px;
+        }
+        .logo-box {
+            width: 80px;
+            margin-right: 15px;
+            text-align: center;
+        }
+        .logo-box img { max-width: 100%; height: auto; }
+        .company-info { flex-grow: 1; }
+        .company-info h2 { font-size: 14px; margin-bottom: 2px; }
+        .irn-info {
+            font-size: 9px;
+            margin-top: 10px;
+            word-break: break-all;
+        }
+        .header-qr {
+            text-align: right;
+            width: 150px;
+        }
+        .header-qr .tags {
+            font-weight: bold;
+            font-size: 10px;
+            margin-bottom: 5px;
+            color: #003399;
+        }
+        .header-qr .recipient-tag { font-size: 9px; color: #000; text-transform: uppercase; margin-bottom: 5px;}
+        .top-qr-placeholder {
+            width: 80px;
+            height: 80px;
+            border: 1px dashed #ccc;
+            float: right;
+        }
+
+        /* Meta Grid Section (Customer & Invoice Details) */
+        .meta-grid {
+            width: 100%;
+        }
+        .customer-details p { margin-bottom: 2px; }
+        
+        /* Invoice Details Split Rows */
+        .invoice-details-row { display: flex; width: 100%; }
+        .invoice-details-col { width: 50%; padding: 5px; }
+
+        /* Main Data Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border-right: 1px solid #000;
+            border-bottom: 1px solid #000;
+            padding: 5px;
+            vertical-align: top;
+        }
+        th { font-weight: bold; }
+        th:last-child, td:last-child { border-right: none; }
+        
+        /* Items Table Specifics */
+        .items-table th { border-top: none; }
+        .items-table tbody td {
+            border-bottom: none; /* Removes horizontal lines inside item list */
+            padding-bottom: 15px;
+        }
+
+        /* Totals & Bank Section */
+        .middle-section { width: 100%; }
+        .middle-left { width: 60%; }
+        .middle-right { width: 40%; }
+        
+        .words-section { padding: 10px; }
+        
+        .bank-payment-grid { display: flex; width: 100%; height: 100%;}
+        .bank-details { width: 70%; padding: 10px; }
+        .bank-details table td { border: none; padding: 2px 5px 2px 0; font-size: 10px; }
+        .upi-qr-box { width: 30%; padding: 10px; display: flex; align-items: center; justify-content: center; }
+        .small-qr-placeholder { width: 70px; height: 70px; border: 1px dashed #ccc; }
+
+        /* Totals Table */
+        .totals-table td { padding: 4px 10px; text-align: right; }
+        .totals-table td:first-child { text-align: left; }
+        .grand-total-row { font-size: 14px; font-weight: bold; }
+        
+        /* Amount Paid Status */
+        .amount-paid {
+            text-align: right;
+            padding: 5px 10px;
+            font-weight: bold;
+            color: #2e7d32;
+        }
+
+        /* Tax Breakdown Table */
+        .tax-table th, .tax-table td { text-align: center; }
+        .tax-table td { border-bottom: 1px solid #000; }
+        .tax-table tbody td { border-bottom: none; padding-bottom: 10px; }
+        .tax-table tfoot td { border-top: 1px solid #000; font-weight: bold; }
+
+        /* Footer Section */
+        .footer-grid { width: 100%; min-height: 130px;}
+        .notes-terms { width: 65%; padding: 10px; }
+        .notes-terms p { margin-top: 2px; }
+        .notes-terms ol { padding-left: 15px; margin-top: 4px; }
+        
+        .signature-box { width: 35%; padding: 10px; position: relative; text-align: right; }
+        .stamp-placeholder { width: 120px; height: 60px; position: absolute; right: 20px; top: 30px; }
+
+        /* Page Footer */
+        .page-footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: #555;
+            margin-top: 10px;
+            padding: 0 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="invoice-wrapper">
+    
+    <div class="header-top flex">
+        <div class="logo-box text-blue">
+            <img src="{{APP_LOGO_URL}}" style="display: {{SHOW_LOGO}};" alt="Logo">
+            <div class="bold">{{COMPANY_SHORT_NAME}}</div>
+        </div>
+        <div class="company-info">
+            <h2 class="bold">{{COMPANY_NAME}}</h2>
+            <p>{{COMPANY_ADDRESS}}</p>
+            <p>GSTIN: <strong>{{COMPANY_GSTIN}}</strong></p>
+            <p>Mobile: {{COMPANY_MOBILE}} &nbsp; Email: {{COMPANY_EMAIL}}</p>
+            
+            <div class="irn-info">
+                <p>IRN: {{IRN_NUMBER}}</p>
+                <p>Acknowledgement Number: {{ACK_NUMBER}}</p>
+            </div>
+        </div>
+        <div class="header-qr">
+            <div class="tags text-blue">TAX INVOICE</div>
+            <div class="recipient-tag">{{RECIPIENT_TYPE}}</div>
+            <div class="top-qr-placeholder">
+                <img src="{{TOP_QR_URL}}" style="width: 100%; height: 100%; display: {{SHOW_TOP_QR}};" alt="QR Code">
+            </div>
+        </div>
+    </div>
+
+    <div class="meta-grid flex border-top">
+        <div class="customer-details w-50 border-right p-10">
+            <p>Customer Details:</p>
+            <p class="bold">{{CUSTOMER_NAME}}</p>
+            <p>GSTIN: {{CUSTOMER_GSTIN}}</p>
+            <p>Billing address:</p>
+            <p>{{BILLING_ADDRESS}}</p>
+            <p>Shipping address:</p>
+            <p>{{SHIPPING_ADDRESS}}</p>
+            <p>Ph: {{CUSTOMER_PHONE}}</p>
+        </div>
+        
+        <div class="w-50 flex-col">
+            <div class="invoice-details-row border-bottom">
+                <div class="invoice-details-col border-right">
+                    Invoice #:<br><span class="bold">{{INVOICE_NUMBER}}</span>
+                </div>
+                <div class="invoice-details-col">
+                    Date:<br><span class="bold">{{INVOICE_DATE}}</span>
+                </div>
+            </div>
+            <div class="invoice-details-row border-bottom">
+                <div class="invoice-details-col border-right">
+                    Place of Supply:<br><span class="bold">{{PLACE_OF_SUPPLY}}</span>
+                </div>
+                <div class="invoice-details-col">
+                    Due Date:<br><span class="bold">{{DUE_DATE}}</span>
+                </div>
+            </div>
+            <div class="invoice-details-row border-bottom">
+                <div class="invoice-details-col border-right">
+                    Eway Bill #<br><span class="bold">{{EWAY_BILL}}</span>
+                </div>
+                <div class="invoice-details-col">
+                    Vehicle Number:<br><span class="bold">{{VEHICLE_NUMBER}}</span>
+                </div>
+            </div>
+            <div class="invoice-details-row p-5" style="flex-grow: 1;">
+                <div>
+                    Dispatch From:<br>
+                    {{DISPATCH_COMPANY}}<br>
+                    {{DISPATCH_ADDRESS}}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="border-top">
+        <table class="items-table">
+            <thead>
+                <tr class="border-bottom">
+                    <th style="width: 3%; text-align: left;">#</th>
+                    <th style="width: 25%; text-align: left;">Item</th>
+                    <th style="width: 10%;">HSN/SAC</th>
+                    <th style="width: 12%; text-align: right;">Rate/ Item</th>
+                    <th style="width: 8%; text-align: right;">Qty</th>
+                    <th style="width: 12%; text-align: right;">Taxable Value</th>
+                    <th style="width: 15%; text-align: right;">IGST</th>
+                    <th style="width: 15%; text-align: right;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>{{INDEX}}</td>
+                    <td class="bold">{{ITEM_NAME}}</td>
+                    <td class="text-center">{{ITEM_HSN}}</td>
+                    <td class="text-right">{{ITEM_RATE}}</td>
+                    <td class="text-right">{{ITEM_QTY}}</td>
+                    <td class="text-right">{{ITEM_TAXABLE_VAL}}</td>
+                    <td class="text-right">{{ITEM_TAX_AMT}} ({{ITEM_TAX_PCT}}%)</td>
+                    <td class="text-right">{{ITEM_TOTAL}}</td>
+                </tr>
+                <tr style="height: 80px;">
+                    <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="middle-section flex border-top border-bottom">
+        
+        <div class="middle-left flex-col border-right">
+            <div class="words-section">
+                Total Items / Qty : {{TOTAL_ITEMS}} / {{TOTAL_QTY}}<br>
+                Total amount (in words): {{AMOUNT_IN_WORDS}} Only.
+            </div>
+            
+            <div class="bank-payment-grid border-top">
+                <div class="bank-details border-right">
+                    <p class="bold">Bank Details:</p>
+                    <table>
+                        <tr><td>Bank:</td><td class="bold">{{BANK_NAME}}</td></tr>
+                        <tr><td>Account #:</td><td class="bold">{{BANK_ACCOUNT}}</td></tr>
+                        <tr><td>IFSC:</td><td class="bold">{{BANK_IFSC}}</td></tr>
+                        <tr><td>Branch:</td><td class="bold">{{BANK_BRANCH}}</td></tr>
+                    </table>
+                    <p style="margin-top:5px;">UPI ID: {{UPI_ID}}</p>
+                </div>
+                <div class="upi-qr-box">
+                    <div class="small-qr-placeholder">
+                        <img src="{{PAYMENT_QR_URL}}" style="width: 100%; height: 100%; display: {{SHOW_PAYMENT_QR}};" alt="Pay QR">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="middle-right">
+            <table class="totals-table" style="height: 100%;">
+                <tr>
+                    <td>Taxable Amount</td>
+                    <td>{{TOTAL_TAXABLE_AMOUNT}}</td>
+                </tr>
+                <tr>
+                    <td>{{TAX_LABEL_1}}</td>
+                    <td>{{TAX_TOTAL_1}}</td>
+                </tr>
+                <tr>
+                    <td>{{TAX_LABEL_2}}</td>
+                    <td>{{TAX_TOTAL_2}}</td>
+                </tr>
+                <tr>
+                    <td>{{TAX_LABEL_3}}</td>
+                    <td>{{TAX_TOTAL_3}}</td>
+                </tr>
+                <tr class="grand-total-row border-top border-bottom">
+                    <td>Total</td>
+                    <td>{{GRAND_TOTAL}}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="amount-paid" style="display: {{SHOW_PAID_STATUS}};">
+                        &#10004; Amount Paid
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div>
+        <table class="tax-table">
+            <thead>
+                <tr>
+                    <th rowspan="2" style="width: 15%;">HSN/SAC</th>
+                    <th rowspan="2" style="width: 25%;">Taxable Value</th>
+                    <th colspan="2" style="width: 40%;">Integrated Tax</th>
+                    <th rowspan="2" style="width: 20%;">Total Tax Amount</th>
+                </tr>
+                <tr>
+                    <th>Rate</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>{{TAX_HSN}}</td>
+                    <td class="text-right">{{TAX_TAXABLE_VAL}}</td>
+                    <td>{{TAX_RATE_PCT}}%</td>
+                    <td class="text-right">{{TAX_AMT}}</td>
+                    <td class="text-right">{{TAX_TOTAL}}</td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td class="bold">TOTAL</td>
+                    <td class="text-right">{{SUM_TAXABLE_VAL}}</td>
+                    <td></td>
+                    <td class="text-right">{{SUM_TAX_AMT}}</td>
+                    <td class="text-right">{{SUM_TOTAL_TAX}}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <div class="footer-grid flex border-top">
+        <div class="notes-terms border-right">
+            <p class="bold">Notes:</p>
+            <p>{{NOTES_TEXT}}</p>
+            <br>
+            <p class="bold">Terms and Conditions:</p>
+            <ol>
+                <li>{{TERM_1}}</li>
+                <li>{{TERM_2}}</li>
+                <li>{{TERM_3}}</li>
+                <li>{{TERM_4}}</li>
+            </ol>
+        </div>
+        
+        <div class="signature-box">
+            <p style="font-size: 9px; color: #555;">For {{COMPANY_NAME}}</p>
+            <div class="stamp-placeholder">
+                <img src="{{SIGNATURE_URL}}" style="width: 100%; height: 100%; display: {{SHOW_SIGNATURE}};" alt="Signature">
+            </div>
+            <p style="position: absolute; bottom: 10px; right: 10px; font-size: 9px;">Authorized Signatory</p>
+        </div>
+    </div>
+
+</div>
+
+<div class="page-footer" style="max-width: 850px; margin: 5px auto;">
+    <span>Page {{CURRENT_PAGE}} / {{TOTAL_PAGES}}</span>
+    <span>This is a digitally signed document.</span>
+</div>
+
+</body>
+</html>

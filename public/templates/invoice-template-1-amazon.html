@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Invoice Template</title>
+    <style>
+        /* Base Styles */
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            color: #000;
+            line-height: 1.4;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .invoice-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 40px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        
+        /* Header Section */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .header-left h1 {
+            color: #1a4f8b;
+            font-size: 16px;
+            margin: 0 0 10px 0;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .header-left h2 {
+            font-size: 18px;
+            margin: 0 0 5px 0;
+        }
+        .header-left p {
+            margin: 2px 0;
+            color: #333;
+        }
+        .header-right {
+            text-align: right;
+        }
+        .header-right .recipient-tag {
+            font-size: 10px;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .logo-placeholder {
+            max-width: 150px;
+            height: 40px;
+            /* In your app, bind the src of an img tag here */
+        }
+
+        /* Meta Information (Dates, Addresses) */
+        .meta-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        .meta-col {
+            flex: 1;
+            padding-right: 15px;
+        }
+        .meta-col strong {
+            display: inline-block;
+            margin-bottom: 3px;
+        }
+
+        /* Table Styles */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        }
+        .items-table th, .items-table td {
+            padding: 8px 5px;
+            text-align: left;
+        }
+        .items-table th {
+            border-top: 1px solid #000;
+            border-bottom: 1px solid #000;
+            font-weight: bold;
+        }
+        .items-table .num-col { text-align: right; }
+        
+        .item-details {
+            font-size: 10px;
+            color: #555;
+            margin-top: 3px;
+        }
+
+        /* Totals Section */
+        .totals-section {
+            display: flex;
+            justify-content: space-between;
+            border-top: 1px solid #000;
+            padding-top: 10px;
+        }
+        .totals-table {
+            width: 300px;
+            border-collapse: collapse;
+        }
+        .totals-table td {
+            padding: 4px 5px;
+            text-align: right;
+        }
+        .totals-table td:first-child {
+            text-align: left;
+        }
+        .grand-total {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        /* Amount in Words & Payable */
+        .amount-summary {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        
+        /* Footer Information (UPI, Bank, Sign) */
+        .footer-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+        }
+        .qr-box {
+            width: 100px;
+            height: 100px;
+            border: 1px dashed #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 5px;
+        }
+        .bank-details table td {
+            padding: 2px 10px 2px 0;
+        }
+        .signature-box {
+            text-align: center;
+        }
+        .signature-stamp {
+            width: 100px;
+            height: 60px;
+            margin: 10px auto;
+            /* Bind signature image here */
+        }
+
+        /* Notes & Terms */
+        .terms {
+            margin-bottom: 30px;
+        }
+        .terms p {
+            margin: 2px 0;
+        }
+
+        /* Page Footer */
+        .page-footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+
+<div class="invoice-container">
+    
+    <div class="header">
+        <div class="header-left">
+            <h1>{{DOCUMENT_TITLE}}</h1>
+            <h2>{{COMPANY_NAME}}</h2>
+            <p>GSTIN <strong>{{COMPANY_GSTIN}}</strong></p>
+            <p>{{COMPANY_ADDRESS_LINE_1}}</p>
+            <p>{{COMPANY_ADDRESS_LINE_2}}</p>
+            <p>Mobile {{COMPANY_MOBILE}} &nbsp; Email {{COMPANY_EMAIL}}</p>
+        </div>
+        <div class="header-right">
+            <div class="recipient-tag">{{RECIPIENT_LABEL}}</div>
+            <img src="{{APP_LOGO_URL}}" alt="Company Logo" class="logo-placeholder" style="display: {{SHOW_LOGO}};">
+        </div>
+    </div>
+
+    <div class="meta-row">
+        <div class="meta-col">
+            <strong>Invoice #:</strong> {{INVOICE_NUMBER}}
+        </div>
+        <div class="meta-col">
+            <strong>Invoice Date:</strong> {{INVOICE_DATE}}
+        </div>
+        <div class="meta-col">
+            <strong>Due Date:</strong> {{DUE_DATE}}
+        </div>
+    </div>
+
+    <div class="meta-row">
+        <div class="meta-col">
+            <strong>Customer Details:</strong><br>
+            <strong>{{CUSTOMER_NAME}}</strong><br>
+            Ph: {{CUSTOMER_PHONE}}
+        </div>
+        <div class="meta-col">
+            <strong>Billing address:</strong><br>
+            {{BILLING_ADDRESS}}
+        </div>
+        <div class="meta-col">
+            <strong>Shipping address:</strong><br>
+            {{SHIPPING_ADDRESS}}
+        </div>
+    </div>
+
+    <div class="meta-row">
+        <div class="meta-col">
+            <strong>Place of Supply: {{PLACE_OF_SUPPLY}}</strong>
+        </div>
+    </div>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th class="num-col">Rate/Item</th>
+                <th class="num-col">Qty</th>
+                <th class="num-col">Taxable Value</th>
+                <th class="num-col">Tax Amount</th>
+                <th class="num-col">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>{{ITEM_INDEX}}</td>
+                <td>
+                    <strong>{{ITEM_NAME}}</strong><br>
+                    <div class="item-details">
+                        HSN: {{ITEM_HSN}}<br><br>
+                        {{ITEM_VARIANTS_OR_DETAILS}}
+                    </div>
+                </td>
+                <td class="num-col">{{ITEM_RATE}}</td>
+                <td class="num-col">{{ITEM_QTY}}</td>
+                <td class="num-col">{{ITEM_TAXABLE_VAL}}</td>
+                <td class="num-col">{{ITEM_TAX_AMT}}</td>
+                <td class="num-col">{{ITEM_TOTAL}}</td>
+            </tr>
+            </tbody>
+    </table>
+
+    <div class="totals-section">
+        <div></div>
+        <div>
+            <table class="totals-table">
+                <tr>
+                    <td>Taxable Amount</td>
+                    <td>{{TOTAL_TAXABLE_AMOUNT}}</td>
+                </tr>
+                <tr>
+                    <td>{{TAX_LABEL}}</td>
+                    <td>{{TOTAL_TAX_AMOUNT}}</td>
+                </tr>
+                <tr class="grand-total">
+                    <td>Total</td>
+                    <td>{{GRAND_TOTAL}}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="amount-summary">
+        <div>
+            Total Items / Qty : {{TOTAL_ITEMS_COUNT}} / {{TOTAL_QTY_COUNT}}<br><br>
+            Total amount (in words): {{AMOUNT_IN_WORDS}}
+        </div>
+        <div style="text-align: right; padding-top: 15px;">
+            Amount Payable: &nbsp;&nbsp;&nbsp;<strong>{{AMOUNT_PAYABLE}}</strong>
+        </div>
+    </div>
+
+    <div class="footer-info">
+        <div>
+            <strong>Pay using UPI:</strong>
+            <div class="qr-box">
+                <img src="{{QR_CODE_URL}}" alt="QR" style="max-width: 100%; max-height: 100%; display: {{SHOW_QR}};">
+            </div>
+        </div>
+        <div class="bank-details">
+            <strong>Bank Details:</strong><br>
+            <table>
+                <tr><td>Bank:</td><td>{{BANK_NAME}}</td></tr>
+                <tr><td>Account #:</td><td>{{BANK_ACCOUNT}}</td></tr>
+                <tr><td>IFSC:</td><td>{{BANK_IFSC}}</td></tr>
+                <tr><td>Branch:</td><td>{{BANK_BRANCH}}</td></tr>
+            </table>
+        </div>
+        <div class="signature-box">
+            For {{COMPANY_NAME}}<br>
+            <div class="signature-stamp">
+                 <img src="{{SIGNATURE_URL}}" alt="Stamp" style="max-width: 100%; max-height: 100%; display: {{SHOW_SIGNATURE}};">
+            </div>
+            Authorized Signatory
+        </div>
+    </div>
+
+    <div class="terms">
+        <p><strong>Notes:</strong></p>
+        <p>{{NOTES_TEXT}}</p>
+        <br>
+        <p><strong>Terms and Conditions:</strong></p>
+        <p>1. {{TERM_1}}</p>
+        <p>2. {{TERM_2}}</p>
+        <p>3. {{TERM_3}}</p>
+    </div>
+
+    <div class="page-footer">
+        <span>Page {{CURRENT_PAGE}} / {{TOTAL_PAGES}}</span>
+        <span>This is a digitally signed document.</span>
+    </div>
+
+</div>
+
+</body>
+</html>

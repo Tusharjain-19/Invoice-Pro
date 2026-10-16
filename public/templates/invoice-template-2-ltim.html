@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Corporate Invoice Template</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      color: #334155;
+      background-color: #fff;
+      padding: 20px;
+    }
+    .invoice-card {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 15mm;
+      margin: 0 auto;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    
+    .header-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 25px;
+    }
+    .brand-section { display: flex; flex-direction: column; }
+    .brand-logo img { max-height: 44px; object-fit: contain; margin-bottom: 8px; }
+    .brand-logo h2 { font-size: 16px; font-weight: 700; color: #0f172a; }
+    .company-details { font-size: 11px; color: #64748b; line-height: 1.4; margin-top: 4px; }
+
+    .title-section { text-align: right; }
+    .title-section h1 { font-size: 24px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: -0.5px; }
+    .metadata-grid {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 100px 120px;
+      gap: 4px;
+      font-size: 11px;
+      text-align: right;
+    }
+    .metadata-grid .label { font-weight: 600; color: #475569; }
+    .metadata-grid .val { font-family: monospace; font-weight: 700; color: #0f172a; }
+
+    .addresses-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 25px;
+    }
+    .address-col-blue {
+      border-left: 4px solid #0f172a;
+      padding-left: 12px;
+    }
+    .address-col-slate {
+      border-left: 4px solid #64748b;
+      padding-left: 12px;
+    }
+    .address-col h3 {
+      font-size: 9px;
+      font-weight: 800;
+      color: #0f172a;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .address-col-slate h3 { color: #64748b; }
+    .address-details { font-size: 11px; line-height: 1.4; }
+    .address-details p.name { font-weight: 700; color: #0f172a; font-size: 12px; margin-bottom: 2px; }
+
+    table.product-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 25px;
+      font-size: 11px;
+    }
+    table.product-table th {
+      background-color: #0f172a;
+      color: #fff;
+      padding: 10px 8px;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 10px;
+      text-align: left;
+    }
+    table.product-table td {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 9px 8px;
+    }
+    table.product-table tr:nth-child(even) { background-color: #f8fafc; }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .font-mono { font-family: monospace; }
+
+    .bottom-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-top: 15px;
+      gap: 20px;
+    }
+    .left-notes-panel {
+      width: 50%;
+      font-size: 11px;
+    }
+    .tax-analysis-card {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 10px;
+      font-size: 9px;
+      margin-top: 10px;
+      line-height: 1.4;
+    }
+    .tax-analysis-card h4 { font-weight: 700; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin-bottom: 6px; text-transform: uppercase; }
+
+    .summary-card {
+      width: 45%;
+      background-color: #f8fafc;
+      border: 1px solid #cbd5e1;
+      padding: 15px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: #1e293b;
+    }
+    .summary-table { width: 100%; border-collapse: collapse; }
+    .summary-table td { padding: 4px 0; font-weight: 500; }
+    .summary-table tr.total-row {
+      font-size: 14px;
+      font-weight: 800;
+      border-top: 1px solid #cbd5e1;
+      color: #0f172a;
+    }
+    .summary-table tr.total-row td { padding-top: 8px; }
+
+    .footer-area {
+      border-top: 1px solid #e2e8f0;
+      padding-top: 15px;
+      margin-top: 25px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      font-size: 10px;
+      color: #64748b;
+    }
+    .footer-area p { line-height: 1.4; }
+    .sig-area { text-align: right; }
+    .sig-img { max-height: 32px; object-fit: contain; margin-bottom: 2px; }
+
+    .qr-box {
+      width: 60px;
+      height: 60px;
+      border: 1px dashed #ccc;
+    }
+
+    .page-footer {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: #555;
+      margin-top: 10px;
+      padding: 0 10px;
+      max-width: 210mm;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    @media print {
+      body { padding: 0; background-color: #fff; }
+      .invoice-card { border: none; padding: 0; width: 100%; min-height: 0; }
+      @page { size: A4; margin: 12mm; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="invoice-card">
+    <div>
+      <!-- Header -->
+      <div class="header-section">
+        <div class="brand-section">
+          <div class="brand-logo">
+            <img src="{{APP_LOGO_URL}}" style="display: {{SHOW_LOGO}};" alt="Logo">
+          </div>
+          <div class="company-details">
+            <p style="font-weight: 700; color: #1e3a8a;">{{COMPANY_NAME}}</p>
+            <p>{{COMPANY_ADDRESS}}</p>
+            <p>GSTIN: <span class="font-mono">{{COMPANY_GSTIN}}</span></p>
+          </div>
+        </div>
+        <div class="title-section">
+          <h1>TAX INVOICE</h1>
+          <div class="metadata-grid">
+            <span class="label">Invoice No:</span>
+            <span class="val">{{INVOICE_NUMBER}}</span>
+            <span class="label">Date:</span>
+            <span>{{INVOICE_DATE}}</span>
+            <span class="label">Due Date:</span>
+            <span>{{DUE_DATE}}</span>
+            <span class="label">Payment Mode:</span>
+            <span style="font-weight:700; color: #475569;">{{PAYMENT_MODE}}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Address Grid -->
+      <div class="addresses-section">
+        <div class="address-col address-col-blue">
+          <h3>Billed To (Receiver)</h3>
+          <div class="address-details">
+            <p class="name">{{CUSTOMER_NAME}}</p>
+            <p>{{BILLING_ADDRESS}}</p>
+            <p style="font-weight:600; margin-top: 4px;">GSTIN: <span class="font-mono">{{CUSTOMER_GSTIN}}</span></p>
+            <p>Phone: {{CUSTOMER_PHONE}}</p>
+          </div>
+        </div>
+        <div class="address-col address-col-slate">
+          <h3>Shipped To (Consignee)</h3>
+          <div class="address-details">
+            <p class="name">{{CUSTOMER_NAME}}</p>
+            <p>{{SHIPPING_ADDRESS}}</p>
+            <p>Phone: {{CUSTOMER_PHONE}}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Product Table -->
+      <table class="product-table">
+        <thead>
+          <tr>
+            <th style="width: 5%; text-align: center;">#</th>
+            <th>Item Name & Details</th>
+            <th class="text-center" style="width: 12%;">HSN</th>
+            <th class="text-right" style="width: 14%;">Rate</th>
+            <th class="text-center" style="width: 8%;">Qty</th>
+            <th class="text-right" style="width: 14%;">Discount</th>
+            <th class="text-center" style="width: 10%;">GST</th>
+            <th class="text-right" style="width: 17%;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="text-center">{{INDEX}}</td>
+            <td style="font-weight:600; color: #0f172a">{{ITEM_NAME}}</td>
+            <td class="text-center font-mono">{{ITEM_HSN}}</td>
+            <td class="text-right font-mono">{{ITEM_RATE}}</td>
+            <td class="text-center">{{ITEM_QTY}}</td>
+            <td class="text-right font-mono">{{ITEM_DISCOUNT}}</td>
+            <td class="text-center font-mono">{{ITEM_TAX_PCT}}%</td>
+            <td class="text-right font-mono" style="font-weight: 700; color: #0f172a;">{{ITEM_TOTAL}}</td>
+          </tr>
+          <tr style="height: 60px;">
+            <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Notes, Tax analysis & calculations -->
+      <div class="bottom-section">
+        <div class="left-notes-panel">
+          <div>
+            <span style="font-weight: 700; color: #475569; font-size: 10px; text-transform: uppercase;">Amount in Words</span>
+            <p style="font-style: italic; color: #334155; margin-top: 2px;">{{AMOUNT_IN_WORDS}}</p>
+          </div>
+          <div class="tax-analysis-card">
+            <h4>GST Breakdown Summary</h4>
+            <div style="font-family: monospace;">
+              <p>{{TAX_LABEL_1}}: {{TAX_AMOUNT_1}}</p>
+              <p>{{TAX_LABEL_2}}: {{TAX_AMOUNT_2}}</p>
+            </div>
+          </div>
+          <div style="margin-top: 10px;">
+            <p style="font-weight:700; font-size: 10px; color: #475569; text-transform: uppercase;">Notes / Remarks:</p>
+            <p style="color: #64748b; font-style: italic;">{{NOTES_TEXT}}</p>
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <table class="summary-table">
+            <tbody>
+              <tr><td>Gross Value:</td><td class="text-right font-mono">{{SUBTOTAL}}</td></tr>
+              <tr><td>Discount:</td><td class="text-right font-mono">{{TOTAL_DISCOUNT}}</td></tr>
+              <tr><td>Taxable Value:</td><td class="text-right font-mono">{{TOTAL_TAXABLE_AMOUNT}}</td></tr>
+              <tr><td>Tax Amount:</td><td class="text-right font-mono">{{TOTAL_TAX_AMOUNT}}</td></tr>
+              <tr><td>Round Off:</td><td class="text-right font-mono">{{ROUND_OFF}}</td></tr>
+              <tr class="total-row"><td>Grand Total:</td><td class="text-right font-mono" style="font-weight: 700;">{{GRAND_TOTAL}}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer-area">
+      <div class="bank-details" style="display: flex; gap: 15px; align-items: center;">
+        <div class="qr-box">
+          <img src="{{QR_CODE_URL}}" style="width: 100%; height: 100%; display: {{SHOW_QR}};" alt="QR Code">
+        </div>
+        <div>
+          <p style="font-weight:700; color: #1d4ed8;">UPI Payment QR</p>
+          <p>Bank: {{BANK_NAME}} | Holder: {{BANK_HOLDER}}</p>
+          <p>A/C: <span class="font-mono">{{BANK_ACCOUNT}}</span> | IFSC: <span class="font-mono">{{BANK_IFSC}}</span></p>
+        </div>
+      </div>
+      <div class="sig-area">
+        <p style="font-size: 9px; font-weight: 700; color: #1e3a8a; margin-bottom: 2px;">Authorized Signatory</p>
+        <div>
+          <img src="{{SIGNATURE_URL}}" class="sig-img" style="display: {{SHOW_SIGNATURE}};" alt="Signature">
+        </div>
+        <p style="border-top:1px solid #ccc; font-size: 9px; padding-top:2px;">{{COMPANY_NAME}}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>Page {{CURRENT_PAGE}} / {{TOTAL_PAGES}}</span>
+    <span>This is a digitally signed document.</span>
+  </div>
+
+</body>
+</html>
