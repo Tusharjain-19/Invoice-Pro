@@ -11,9 +11,11 @@ import { PdfDocumentIcon } from '@/components/shared/PdfDocumentIcon';
 
 interface DesignerReportModalProps {
   reportData: DesignerReportData;
+  triggerText?: string;
+  className?: string;
 }
 
-export function DesignerReportModal({ reportData }: DesignerReportModalProps) {
+export function DesignerReportModal({ reportData, triggerText = 'Export Auditor PDF', className }: DesignerReportModalProps) {
   const [open, setOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -59,10 +61,10 @@ export function DesignerReportModal({ reportData }: DesignerReportModalProps) {
         <Button
           variant="outline"
           size="sm"
-          className="rounded-xl font-bold h-10 border-primary/30 hover:border-primary/60 bg-primary/5 hover:bg-primary/10 text-primary gap-2 shrink-0 shadow-xs"
+          className={className || "rounded-xl font-bold h-10 border-primary/30 hover:border-primary/60 bg-primary/5 hover:bg-primary/10 text-primary gap-2 shrink-0 shadow-xs whitespace-nowrap"}
         >
           <PdfDocumentIcon className="h-4.5 w-4.5 text-primary shrink-0" />
-          <span>Export Auditor PDF</span>
+          <span>{triggerText}</span>
         </Button>
       </DialogTrigger>
 

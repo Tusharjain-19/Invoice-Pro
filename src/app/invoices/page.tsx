@@ -23,10 +23,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import {
   FileText, Plus, Search, Filter, Eye, Trash2, CheckCircle2, AlertTriangle, Clock, X,
-  Printer, Loader2, Ban, Download, Check, Sparkles
+  Printer, Loader2, Ban, Download, Check, Sparkles, MessageCircle, PackageCheck, FileCode,
+  Lock, Key, Shield
 } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { PDFTemplateSelector } from '@/components/invoice-templates/PDFTemplates';
+import { WhatsAppDueReminderModal } from '@/components/payments/WhatsAppDueReminderModal';
+import { generateEWayBillJSON, downloadJsonFile } from '@/lib/gstCompliance';
 import { toast } from 'sonner';
 import type { Invoice, InvoiceStatus, AppSettings } from '@/types';
 import { INVOICE_TYPE_LABELS } from '@/types';
@@ -55,6 +58,41 @@ export default function InvoicesListPage() {
 
   // Single PDF download state
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+
+  // WhatsApp due reminder modal state
+  const [reminderInvoice, setReminderInvoice] = useState<Invoice | null>(null);
+
+  // Cashier PIN Protection for Invoice Cancellation & Purging
+  const [cashierPinPromptOpen, setCashierPinPromptOpen] = useState<boolean>(false);
+  const [cashierEnteredPin, setCashierEnteredPin] = useState<string>('');
+  const [pendingRestrictedAction, setPendingRestrictedAction] = useState<(() => void) | null>(null);
+
+  const executeWithCashierProtection = (action: () => void) => {
+    if (settings?.isCashierLockEnabled) {
+      setPendingRestrictedAction(() => action);
+      setCashierEnteredPin('');
+      setCashierPinPromptOpen(true);
+    } else {
+      action();
+    }
+  };
+
+  const handleVerifyCashierPin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const correctPin = settings?.staffPin || '1234';
+    if (cashierEnteredPin.trim() === correctPin.trim()) {
+      setCashierPinPromptOpen(false);
+      setCashierEnteredPin('');
+      if (pendingRestrictedAction) {
+        const actionToRun = pendingRestrictedAction;
+        setPendingRestrictedAction(null);
+        actionToRun();
+      }
+      toast.success('Owner PIN Verified');
+    } else {
+      toast.error('Incorrect PIN. Only Admin/Owner can cancel or delete invoices.');
+    }
+  };
 
   const invoices = useLiveQuery(() => db.invoices.toArray()) ?? [];
   const settings = useLiveQuery(() => db.settings.toCollection().first());
@@ -242,6 +280,54 @@ export default function InvoicesListPage() {
         }
       }
     });
+  };
+
+  const handleConvertToPurchaseInvoice = async (poInvoice: Invoice) => {
+    try {
+      const now = Date.now();
+      await db.invoices.update(poInvoice.id!, {
+        invoiceType: 'purchase_invoice',
+        notes: (poInvoice.notes ? poInvoice.notes + ' | ' : '') + `Converted from PO on ${new Date(now).toLocaleDateString()}`,
+        updatedAt: now,
+      });
+
+      let stockedCount = 0;
+      for (const item of poInvoice.items || []) {
+        let prod = null;
+        if (item.productId) {
+          prod = await db.products.get(item.productId);
+        }
+        if (!prod && item.description) {
+          prod = await db.products.where('name').equals(item.description).first();
+        }
+
+        if (prod && prod.id) {
+          const prevStock = prod.currentStock;
+          const newStock = prevStock + (item.quantity || 1);
+          await db.products.update(prod.id, {
+            currentStock: newStock,
+            updatedAt: now,
+          });
+          await db.stockLogs.add({
+            productId: prod.id,
+            productName: prod.name,
+            type: 'in',
+            quantity: item.quantity || 1,
+            previousStock: prevStock,
+            newStock,
+            reference: poInvoice.invoiceNumber,
+            referenceType: 'purchase_invoice',
+            date: now,
+          });
+          stockedCount++;
+        }
+      }
+
+      toast.success(`PO ${poInvoice.invoiceNumber} converted to Purchase Invoice! ${stockedCount} products stocked up.`);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to convert purchase order');
+    }
   };
 
   const getStatusBadge = (inv: Invoice) => {
@@ -503,10 +589,47 @@ export default function InvoicesListPage() {
                               )}
                             </button>
 
-                            {/* 4. Delete / Cancel Button */}
+                            {/* 4. WhatsApp Due Reminder Button (for pending dues) */}
+                            {inv.balanceDue > 0 && !isCancelled && (
+                              <button
+                                onClick={() => setReminderInvoice(inv)}
+                                className="h-8 w-8 rounded-md border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/70 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 transition-colors shadow-2xs"
+                                title="Send WhatsApp payment reminder with UPI link"
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            {/* 4b. Purchase Order Stock-Up Shortcut */}
+                            {inv.invoiceType === 'purchase_order' && !isCancelled && (
+                              <button
+                                onClick={() => handleConvertToPurchaseInvoice(inv)}
+                                className="h-8 px-2 rounded-md border border-emerald-300 dark:border-emerald-800 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 flex items-center gap-1 text-[11px] font-bold shadow-2xs hover:bg-emerald-100 transition-colors"
+                                title="Convert PO to Purchase Invoice & Stock Up"
+                              >
+                                <PackageCheck className="h-3.5 w-3.5" /> Stock Up
+                              </button>
+                            )}
+
+                            {/* 4c. E-Way Bill JSON Button (Invoices >= ₹50,000) */}
+                            {inv.totalAmount >= 50000 && !isCancelled && (
+                              <button
+                                onClick={() => {
+                                  const payload = generateEWayBillJSON(inv, settings);
+                                  downloadJsonFile(payload, `EWayBill_${inv.invoiceNumber}.json`);
+                                  toast.success(`E-Way Bill JSON generated for ${inv.invoiceNumber}`);
+                                }}
+                                className="h-8 w-8 rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 flex items-center justify-center shadow-2xs hover:bg-amber-100 transition-colors"
+                                title="Download E-Way Bill JSON for ewaybillgst.gov.in"
+                              >
+                                <FileCode className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            {/* 5. Delete / Cancel Button */}
                             {isCancelled ? (
                               <button
-                                onClick={() => inv.id && handlePermanentDelete(inv.id, inv.invoiceNumber)}
+                                onClick={() => inv.id && executeWithCashierProtection(() => handlePermanentDelete(inv.id!, inv.invoiceNumber))}
                                 className="h-8 w-8 rounded-md hover:bg-rose-100/60 dark:hover:bg-rose-900/40 text-rose-400 hover:text-rose-700 flex items-center justify-center transition-colors"
                                 title="Purge cancelled record permanently"
                               >
@@ -514,7 +637,7 @@ export default function InvoicesListPage() {
                               </button>
                             ) : (
                               <button
-                                onClick={() => handleOpenCancelModal(inv)}
+                                onClick={() => executeWithCashierProtection(() => handleOpenCancelModal(inv))}
                                 className="h-8 w-8 rounded-md hover:bg-rose-100/60 dark:hover:bg-rose-900/40 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors"
                                 title="Cancel & Delete Invoice (with auto-download)"
                               >
@@ -664,6 +787,52 @@ export default function InvoicesListPage() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* WhatsApp Payment Reminder Modal */}
+      <WhatsAppDueReminderModal
+        open={!!reminderInvoice}
+        onOpenChange={(open) => !open && setReminderInvoice(null)}
+        invoice={reminderInvoice}
+      />
+
+      {/* Cashier Mode Staff Lock PIN Dialog */}
+      <Dialog open={cashierPinPromptOpen} onOpenChange={setCashierPinPromptOpen}>
+        <DialogContent className="max-w-xs">
+          <form onSubmit={handleVerifyCashierPin}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-foreground">
+                <Lock className="h-4 w-4 text-rose-500" /> Owner Authorization Required
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Cashier lock mode is active. Deleting or cancelling invoices requires the Owner PIN.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-4 space-y-2">
+              <Label htmlFor="cashier-pin-input" className="text-xs font-semibold">Enter 4-Digit Owner PIN</Label>
+              <Input
+                id="cashier-pin-input"
+                type="password"
+                maxLength={6}
+                value={cashierEnteredPin}
+                onChange={(e) => setCashierEnteredPin(e.target.value)}
+                placeholder="PIN"
+                className="font-mono text-center tracking-widest text-lg"
+                autoFocus
+              />
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setCashierPinPromptOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" className="font-bold bg-primary text-white">
+                Authorize
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

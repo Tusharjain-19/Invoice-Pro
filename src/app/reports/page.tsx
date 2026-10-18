@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -11,10 +11,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import {
   FileSpreadsheet, Calendar, BarChart3, TrendingUp, TrendingDown, Wallet, Receipt, Award, CheckCircle, Download,
-  Layers, Calculator, PieChart, Scale, ArrowUpRight, ArrowDownRight, Sparkles, Activity, Minus
+  Layers, Calculator, PieChart, Scale, ArrowUpRight, ArrowDownRight, Sparkles, Activity, Minus, Users, PackageCheck,
+  Percent, Building2, Lock, Unlock, Shield
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { PDFTemplateSelector } from '@/components/invoice-templates/PDFTemplates';
 import { DesignerReportModal } from '@/components/dashboard/DesignerReportModal';
 import type { DesignerReportData } from '@/components/dashboard/DesignerReportPDF';
@@ -24,6 +29,21 @@ import JSZip from 'jszip';
 import { GrowthMatrixView, type FinancialGrowthMetric } from '@/components/dashboard/GrowthMatrixView';
 import { UnitEconomicsView } from '@/components/dashboard/UnitEconomicsView';
 import type { Invoice, Expense, Product } from '@/types';
+import {
+  ReportsLineCharts,
+  ReportsBarCharts,
+  ReportsPieCharts,
+  buildReportsChartsData,
+  SalesContextCharts,
+  CustomerLtvMatrix,
+  InventoryVelocityMatrix,
+} from '@/components/reports';
+import {
+  calculatePaymentModesAnalytics,
+  calculateSalesTimingAnalytics,
+  calculateCustomerLtvAnalytics,
+  calculateInventoryVelocityAnalytics,
+} from '@/lib/analyticsHelper';
 
 export type ReportPeriodType = 'monthly' | 'quarterly' | 'financial-year' | 'yearly';
 
@@ -101,6 +121,32 @@ export default function ReportsPage() {
   const expenses = useLiveQuery(() => db.expenses.toArray()) ?? [];
   const products = useLiveQuery(() => db.products.toArray()) ?? [];
   const { settings } = useSettingsStore();
+
+  // Cashier Lock state: hide profit metrics from staff
+  const [isProfitRevealed, setIsProfitRevealed] = useState<boolean>(true);
+  const [showPinModal, setShowPinModal] = useState<boolean>(false);
+  const [enteredPin, setEnteredPin] = useState<string>('');
+
+  useEffect(() => {
+    if (settings?.isCashierLockEnabled) {
+      setIsProfitRevealed(false);
+    } else {
+      setIsProfitRevealed(true);
+    }
+  }, [settings?.isCashierLockEnabled]);
+
+  const handleVerifyPin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const requiredPin = settings?.staffPin || '1234';
+    if (enteredPin.trim() === requiredPin.trim()) {
+      setIsProfitRevealed(true);
+      setShowPinModal(false);
+      setEnteredPin('');
+      toast.success('Admin Owner Access Granted: Profit margins revealed');
+    } else {
+      toast.error('Incorrect Admin PIN. Access denied.');
+    }
+  };
 
   const months = [
     "January", "February", "March", "April", "May", "June",
@@ -402,6 +448,57 @@ export default function ReportsPage() {
     billCount: currentMetrics.orderCount,
     expenseCount: filteredData.exps.length,
   }), [currentMetrics, filteredData.exps.length]);
+
+  // Aggregated Visual Analytics & Charts Dataset
+  const reportsChartsData = useMemo(() => {
+    return buildReportsChartsData({
+      viewType,
+      selectedMonth,
+      selectedYear,
+      selectedQuarter,
+      selectedFY,
+      invoices,
+      expenses,
+      productCostMap,
+      currentMetrics,
+      prevMetrics,
+      yoyMetrics,
+      comparisonTimeRanges,
+    });
+  }, [
+    viewType,
+    selectedMonth,
+    selectedYear,
+    selectedQuarter,
+    selectedFY,
+    invoices,
+    expenses,
+    productCostMap,
+    currentMetrics,
+    prevMetrics,
+    yoyMetrics,
+    comparisonTimeRanges,
+  ]);
+
+  // 1. Payment Modes Analytics (for current period)
+  const paymentAnalytics = useMemo(() => {
+    return calculatePaymentModesAnalytics(filteredData.sales);
+  }, [filteredData.sales]);
+
+  // 2. Sales Timing (Peak Shopping Hours & Day-of-Week Matrix)
+  const timingAnalytics = useMemo(() => {
+    return calculateSalesTimingAnalytics(filteredData.sales);
+  }, [filteredData.sales]);
+
+  // 3. Customer Repeat vs New Buyer & LTV Analytics
+  const customerLtvAnalytics = useMemo(() => {
+    return calculateCustomerLtvAnalytics(invoices, timeRange.start, timeRange.end);
+  }, [invoices, timeRange.start, timeRange.end]);
+
+  // 4. Inventory Velocity & Trapped Capital Analytics
+  const inventoryVelocityAnalytics = useMemo(() => {
+    return calculateInventoryVelocityAnalytics(products, filteredData.sales);
+  }, [products, filteredData.sales]);
 
   // Construct Growth Metrics Matrix Rows
   const growthMetrics: FinancialGrowthMetric[] = useMemo(() => [
@@ -873,6 +970,226 @@ export default function ReportsPage() {
     toast.success(`Exported 8-sheet Financial Audit workbook to ${fileName}!`);
   };
 
+  // Government Compliance GSTR-1 Excel Export (B2B, B2CS, HSN, Docs)
+  const handleExportGSTR1 = () => {
+    if (filteredData.sales.length === 0) {
+      toast.error('No sales transactions for selected period');
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // 1. B2B (Invoices with customer GSTIN)
+    const b2bInvoices = filteredData.sales.filter(s => Boolean(s.customerGstin && s.customerGstin.trim()));
+    const b2bRows: any[] = [];
+    b2bInvoices.forEach(inv => {
+      const pos = inv.customerGstin ? inv.customerGstin.slice(0, 2) : '08';
+      const isReverse = inv.isReverseCharge ? 'Y' : 'N';
+      (inv.items || []).forEach(item => {
+        b2bRows.push({
+          'GSTIN/UIN of Recipient': inv.customerGstin,
+          'Receiver Name': inv.customerName,
+          'Invoice Number': inv.invoiceNumber,
+          'Invoice date': formatDate(inv.date),
+          'Invoice Value': inv.totalAmount,
+          'Place Of Supply': `${pos}-${inv.customerState || 'State'}`,
+          'Reverse Charge': isReverse,
+          'Applicable % of Tax Rate': '',
+          'Invoice Type': 'Regular',
+          'E-Commerce GSTIN': '',
+          'Rate': item.gstRate,
+          'Taxable Value': item.taxableAmount || item.total,
+          'Cess Amount': 0,
+        });
+      });
+    });
+    const wsB2b = XLSX.utils.json_to_sheet(b2bRows.length > 0 ? b2bRows : [{ 'GSTIN/UIN of Recipient': 'No B2B Invoices' }]);
+    XLSX.utils.book_append_sheet(wb, wsB2b, 'b2b');
+
+    // 2. B2CS (B2C Small: Unregistered sales)
+    const b2cInvoices = filteredData.sales.filter(s => !s.customerGstin || !s.customerGstin.trim());
+    const b2csMap = new Map<string, { pos: string; rate: number; taxable: number; cess: number }>();
+    b2cInvoices.forEach(inv => {
+      const pos = inv.customerState || settings?.companyState || '08-Rajasthan';
+      (inv.items || []).forEach(item => {
+        const key = `${pos}_${item.gstRate}`;
+        const cur = b2csMap.get(key) || { pos, rate: item.gstRate, taxable: 0, cess: 0 };
+        cur.taxable += item.taxableAmount || item.total;
+        b2csMap.set(key, cur);
+      });
+    });
+    const b2csRows = Array.from(b2csMap.values()).map(r => ({
+      'Type': 'OE',
+      'Place of Supply': r.pos,
+      'Rate': r.rate,
+      'Applicable % of Tax Rate': '',
+      'Taxable Value': Number(r.taxable.toFixed(2)),
+      'Cess Amount': 0,
+      'E-Commerce GSTIN': '',
+    }));
+    const wsB2cs = XLSX.utils.json_to_sheet(b2csRows.length > 0 ? b2csRows : [{ 'Type': 'OE', 'Taxable Value': 0 }]);
+    XLSX.utils.book_append_sheet(wb, wsB2cs, 'b2cs');
+
+    // 3. HSN Summary (Table 12)
+    const hsnMap = new Map<string, { hsn: string; desc: string; uqc: string; qty: number; val: number; txval: number; igst: number; cgst: number; sgst: number }>();
+    filteredData.sales.forEach(inv => {
+      (inv.items || []).forEach(item => {
+        const hsn = item.hsnCode || '9999';
+        const cur = hsnMap.get(hsn) || {
+          hsn,
+          desc: item.description,
+          uqc: item.unit || 'NOS',
+          qty: 0,
+          val: 0,
+          txval: 0,
+          igst: 0,
+          cgst: 0,
+          sgst: 0,
+        };
+        cur.qty += item.quantity || 1;
+        cur.val += item.total || 0;
+        cur.txval += item.taxableAmount || item.total || 0;
+        cur.cgst += item.cgst || 0;
+        cur.sgst += item.sgst || 0;
+        cur.igst += item.igst || 0;
+        hsnMap.set(hsn, cur);
+      });
+    });
+    const hsnRows = Array.from(hsnMap.values()).map(h => ({
+      'HSN': h.hsn,
+      'Description': h.desc,
+      'UQC': h.uqc,
+      'Total Quantity': h.qty,
+      'Total Value': Number(h.val.toFixed(2)),
+      'Taxable Value': Number(h.txval.toFixed(2)),
+      'Integrated Tax Amount': Number(h.igst.toFixed(2)),
+      'Central Tax Amount': Number(h.cgst.toFixed(2)),
+      'State/UT Tax Amount': Number(h.sgst.toFixed(2)),
+      'Cess Amount': 0,
+    }));
+    const wsHsn = XLSX.utils.json_to_sheet(hsnRows.length > 0 ? hsnRows : [{ 'HSN': 'No items' }]);
+    XLSX.utils.book_append_sheet(wb, wsHsn, 'hsn');
+
+    // 4. Docs Issued (Table 13)
+    const docRows = [
+      {
+        'Nature of Document': 'Invoices for outward supply',
+        'Sr. No. From': filteredData.sales[0]?.invoiceNumber || 'INV-001',
+        'Sr. No. To': filteredData.sales[filteredData.sales.length - 1]?.invoiceNumber || 'INV-001',
+        'Total Number': filteredData.sales.length,
+        'Cancelled': filteredData.sales.filter(s => s.status === 'cancelled').length,
+        'Net Issued': filteredData.sales.filter(s => s.status !== 'cancelled').length,
+      },
+    ];
+    const wsDocs = XLSX.utils.json_to_sheet(docRows);
+    XLSX.utils.book_append_sheet(wb, wsDocs, 'docs');
+
+    XLSX.writeFile(wb, `GSTR1_Government_Filing_${timeRange.label.replace(/\s+/g, '_')}.xlsx`);
+    toast.success('Official GSTR-1 Excel downloaded successfully!');
+  };
+
+  // Government Compliance GSTR-3B Summary Excel Export
+  const handleExportGSTR3B = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Table 3.1: Details of Outward Supplies
+    const outwardRows = [
+      {
+        'Nature of Supply': '(a) Outward taxable supplies (other than zero rated, nil rated and exempted)',
+        'Total Taxable Value (₹)': Number(currentMetrics.taxableSales.toFixed(2)),
+        'Integrated Tax (₹)': Number(currentMetrics.igst.toFixed(2)),
+        'Central Tax (₹)': Number(currentMetrics.cgst.toFixed(2)),
+        'State/UT Tax (₹)': Number(currentMetrics.sgst.toFixed(2)),
+        'Cess (₹)': 0,
+      },
+      {
+        'Nature of Supply': '(b) Outward taxable supplies (zero rated)',
+        'Total Taxable Value (₹)': 0,
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+      {
+        'Nature of Supply': '(c) Other outward supplies (Nil rated, exempted)',
+        'Total Taxable Value (₹)': 0,
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+      {
+        'Nature of Supply': '(d) Inward supplies (liable to reverse charge)',
+        'Total Taxable Value (₹)': 0,
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+      {
+        'Nature of Supply': '(e) Non-GST outward supplies',
+        'Total Taxable Value (₹)': 0,
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+    ];
+    const ws31 = XLSX.utils.json_to_sheet(outwardRows);
+    XLSX.utils.book_append_sheet(wb, ws31, '3.1 Outward Supplies');
+
+    // Table 4: Eligible ITC
+    const itcRows = [
+      {
+        'Details': '(A) ITC Available (whether in full or part)',
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+      {
+        'Details': '  (1) Import of goods',
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+      {
+        'Details': '  (2) Import of services',
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+      {
+        'Details': '  (3) Inward supplies liable to reverse charge',
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+      {
+        'Details': '  (4) Inward supplies from ISD',
+        'Integrated Tax (₹)': 0,
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+      {
+        'Details': '  (5) All other ITC (Purchases & Expenses)',
+        'Integrated Tax (₹)': Number((currentMetrics.variableBreakdown?.electricity ? currentMetrics.variableBreakdown.electricity * 0.18 : 0).toFixed(2)),
+        'Central Tax (₹)': 0,
+        'State/UT Tax (₹)': 0,
+        'Cess (₹)': 0,
+      },
+    ];
+    const ws4 = XLSX.utils.json_to_sheet(itcRows);
+    XLSX.utils.book_append_sheet(wb, ws4, '4 Eligible ITC');
+
+    XLSX.writeFile(wb, `GSTR3B_Summary_${timeRange.label.replace(/\s+/g, '_')}.xlsx`);
+    toast.success('Official GSTR-3B Excel downloaded successfully!');
+  };
+
   // ZIP Bulk Invoice Export
   const handleExportZIP = async () => {
     if (filteredData.sales.length === 0) {
@@ -939,24 +1256,88 @@ export default function ReportsPage() {
   return (
     <div className="space-y-5 animate-in fade-in-0 duration-300">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black tracking-tight flex items-center gap-2">
             <Activity className="h-6 w-6 text-primary" />
             Executive Financial Audit & Growth Reports
           </h2>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-muted-foreground text-xs sm:text-sm">
             Unit economics, MoM & YoY expansion analytics, GST liabilities, and multi-period financial models.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <DesignerReportModal reportData={designerReportData} />
-          <Button onClick={handleExportZIP} variant="outline" className="flex items-center gap-1.5 border-primary text-primary hover:bg-primary/5 font-bold shadow-xs">
-            <Download className="h-4 w-4" /> Download Bills (ZIP)
+        <div className="flex flex-nowrap items-center gap-2 shrink-0">
+          <DesignerReportModal
+            reportData={designerReportData}
+            triggerText="Export PDF"
+            className="rounded-xl font-bold h-9 px-3 text-xs border-primary/30 hover:border-primary/60 bg-primary/5 hover:bg-primary/10 text-primary gap-1.5 shrink-0 shadow-xs whitespace-nowrap"
+          />
+          <Button
+            onClick={handleExportZIP}
+            variant="outline"
+            className="h-9 px-3 text-xs flex items-center gap-1.5 border-primary text-primary hover:bg-primary/5 font-bold shadow-xs whitespace-nowrap shrink-0"
+          >
+            <Download className="h-3.5 w-3.5" /> Bills (ZIP)
           </Button>
-          <Button onClick={handleExportExcel} className="flex items-center gap-1.5 font-bold shadow-xs">
-            <FileSpreadsheet className="h-4 w-4" /> Export Financial Model (Excel)
+          <Button
+            onClick={handleExportExcel}
+            className="h-9 px-3 text-xs flex items-center gap-1.5 font-bold shadow-xs whitespace-nowrap shrink-0"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Export Excel
           </Button>
+
+          {/* Govt GST Compliance Export (GSTR-1 & GSTR-3B) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-9 px-3 text-xs flex items-center gap-1.5 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-bold shadow-xs whitespace-nowrap shrink-0"
+              >
+                <Building2 className="h-3.5 w-3.5" /> Govt GST Filing
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 p-1.5 rounded-xl shadow-xl border border-border/60">
+              <DropdownMenuItem onClick={handleExportGSTR1} className="text-xs font-semibold p-2 cursor-pointer flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold">GSTR-1 Excel</div>
+                  <div className="text-[10px] text-muted-foreground font-normal">B2B, B2CS, B2CL &amp; HSN Summary</div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportGSTR3B} className="text-xs font-semibold p-2 cursor-pointer flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 text-blue-600 shrink-0" />
+                <div>
+                  <div className="font-bold">GSTR-3B Summary Excel</div>
+                  <div className="text-[10px] text-muted-foreground font-normal">Table 3.1 Outward &amp; Table 4 ITC</div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Cashier Mode / Profit Lock Indicator */}
+          {settings?.isCashierLockEnabled && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (isProfitRevealed) {
+                  setIsProfitRevealed(false);
+                  toast.info('Profit metrics re-locked for cashier');
+                } else {
+                  setShowPinModal(true);
+                }
+              }}
+              className={`h-9 px-2.5 text-xs font-bold gap-1.5 rounded-xl shrink-0 ${
+                isProfitRevealed
+                  ? 'border-emerald-500/30 text-emerald-600 hover:bg-emerald-50'
+                  : 'border-amber-500/40 text-amber-600 bg-amber-500/5 hover:bg-amber-500/10'
+              }`}
+              title="Cashier PIN protection on profit margins"
+            >
+              {isProfitRevealed ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+              <span>{isProfitRevealed ? 'Owner Mode' : 'Unlock Profit'}</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1155,25 +1536,42 @@ export default function ReportsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0 space-y-1.5">
-            <div className="text-2xl font-black font-mono text-blue-600 dark:text-blue-400">
-              {formatCurrency(currentMetrics.grossProfit)}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <KpiGrowthBadge
-                current={currentMetrics.grossProfit}
-                prior={prevMetrics.grossProfit}
-                label={`vs ${comparisonTimeRanges.previous.type}`}
-              />
-              <span className="text-muted-foreground text-[10px]">•</span>
-              <KpiGrowthBadge
-                current={currentMetrics.grossProfit}
-                prior={yoyMetrics.grossProfit}
-                label="YoY"
-              />
-            </div>
-            <p className="text-[10px] text-muted-foreground pt-0.5">
-              Gross Margin: <span className="font-bold text-foreground">{currentMetrics.grossMargin.toFixed(1)}%</span> · COGS: {formatCurrency(currentMetrics.cogs)}
-            </p>
+            {!isProfitRevealed ? (
+              <div className="py-2 space-y-1">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-sm">
+                  <Lock className="h-4 w-4" /> Locked (Staff Mode)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPinModal(true)}
+                  className="text-[11px] text-primary hover:underline font-semibold"
+                >
+                  Enter Owner PIN to reveal
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="text-2xl font-black font-mono text-blue-600 dark:text-blue-400">
+                  {formatCurrency(currentMetrics.grossProfit)}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  <KpiGrowthBadge
+                    current={currentMetrics.grossProfit}
+                    prior={prevMetrics.grossProfit}
+                    label={`vs ${comparisonTimeRanges.previous.type}`}
+                  />
+                  <span className="text-muted-foreground text-[10px]">•</span>
+                  <KpiGrowthBadge
+                    current={currentMetrics.grossProfit}
+                    prior={yoyMetrics.grossProfit}
+                    label="YoY"
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground pt-0.5">
+                  Gross Margin: <span className="font-bold text-foreground">{currentMetrics.grossMargin.toFixed(1)}%</span> · COGS: {formatCurrency(currentMetrics.cogs)}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -1219,81 +1617,141 @@ export default function ReportsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0 space-y-1.5">
-            <div className={`text-2xl font-black font-mono ${currentMetrics.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'}`}>
-              {formatCurrency(currentMetrics.netProfit)}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <KpiGrowthBadge
-                current={currentMetrics.netProfit}
-                prior={prevMetrics.netProfit}
-                label={`vs ${comparisonTimeRanges.previous.type}`}
-              />
-              <span className="text-muted-foreground text-[10px]">•</span>
-              <KpiGrowthBadge
-                current={currentMetrics.netProfit}
-                prior={yoyMetrics.netProfit}
-                label="YoY"
-              />
-            </div>
-            <p className="text-[10px] text-muted-foreground pt-0.5">
-              Net Margin: <span className="font-bold text-foreground">{currentMetrics.netMargin.toFixed(1)}%</span> · GST: {formatCurrency(currentMetrics.totalTax)}
-            </p>
+            {!isProfitRevealed ? (
+              <div className="py-2 space-y-1">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-sm">
+                  <Lock className="h-4 w-4" /> Locked (Staff Mode)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPinModal(true)}
+                  className="text-[11px] text-primary hover:underline font-semibold"
+                >
+                  Enter Owner PIN to reveal
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className={`text-2xl font-black font-mono ${currentMetrics.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'}`}>
+                  {formatCurrency(currentMetrics.netProfit)}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  <KpiGrowthBadge
+                    current={currentMetrics.netProfit}
+                    prior={prevMetrics.netProfit}
+                    label={`vs ${comparisonTimeRanges.previous.type}`}
+                  />
+                  <span className="text-muted-foreground text-[10px]">•</span>
+                  <KpiGrowthBadge
+                    current={currentMetrics.netProfit}
+                    prior={yoyMetrics.netProfit}
+                    label="YoY"
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground pt-0.5">
+                  Net Margin: <span className="font-bold text-foreground">{currentMetrics.netMargin.toFixed(1)}%</span> · GST: {formatCurrency(currentMetrics.totalTax)}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Tabs list with Unit Economics, MoM/YoY Growth, Sales, GST, and Expenses */}
-      <Tabs defaultValue="unit-economics" className="w-full space-y-4">
-        <TabsList className="border-b border-border/50 mb-4 flex-wrap h-auto gap-1 bg-muted/30 p-1 rounded-xl">
-          <TabsTrigger value="unit-economics" className="flex items-center gap-1.5 font-bold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg">
-            <Calculator className="h-4 w-4" /> Unit Economics (Per ₹100)
+      {/* Tabs list with Sales & Collections, Customer LTV, Fast vs Dead Stock, GST, Expenses, Unit Economics, and Growth */}
+      <Tabs defaultValue="sales" className="w-full space-y-4">
+        <TabsList className="w-full grid grid-cols-7 gap-1 bg-muted/40 p-1 rounded-xl h-auto border border-border/50">
+          <TabsTrigger
+            value="sales"
+            className="flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-bold whitespace-nowrap truncate data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+            title="Sales & Collections"
+          >
+            <Receipt className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Sales & Dues</span>
           </TabsTrigger>
-          <TabsTrigger value="growth" className="flex items-center gap-1.5 font-bold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg">
-            <TrendingUp className="h-4 w-4" /> MoM & YoY Growth Matrix
+          <TabsTrigger
+            value="customers-ltv"
+            className="flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-bold whitespace-nowrap truncate data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+            title="Customer Lifetime Value & Repeat Buyers"
+          >
+            <Users className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Customer LTV</span>
           </TabsTrigger>
-          <TabsTrigger value="sales" className="flex items-center gap-1.5 font-bold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg">
-            <Receipt className="h-4 w-4" /> Sales Register
+          <TabsTrigger
+            value="inventory-velocity"
+            className="flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-bold whitespace-nowrap truncate data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+            title="Fast vs Dead Stock & Trapped Capital"
+          >
+            <PackageCheck className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Dead Stock</span>
           </TabsTrigger>
-          <TabsTrigger value="taxes" className="flex items-center gap-1.5 font-bold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg">
-            <BarChart3 className="h-4 w-4" /> GST Summary
+          <TabsTrigger
+            value="taxes"
+            className="flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-bold whitespace-nowrap truncate data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+            title="GST Tax Liabilities & Slabs"
+          >
+            <BarChart3 className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">GST Summary</span>
           </TabsTrigger>
-          <TabsTrigger value="expenses" className="flex items-center gap-1.5 font-bold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg">
-            <Wallet className="h-4 w-4" /> Expenses
+          <TabsTrigger
+            value="expenses"
+            className="flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-bold whitespace-nowrap truncate data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+            title="Operating Expenses & Cost Heads"
+          >
+            <Wallet className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Expenses</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="unit-economics"
+            className="flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-bold whitespace-nowrap truncate data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+            title="Unit Economics Decomposition (Per ₹100)"
+          >
+            <Calculator className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Unit Economics</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="growth"
+            className="flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-bold whitespace-nowrap truncate data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+            title="MoM & YoY Expansion Growth Matrix"
+          >
+            <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Growth Matrix</span>
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab 1: Unit Economics Suite */}
-        <TabsContent value="unit-economics" className="space-y-4">
-          <UnitEconomicsView
+        {/* Tab 1: Sales Register with Contextual Charts (Velocity, Payment Modes, Peak Hours, Best Days) */}
+        <TabsContent value="sales" className="space-y-6">
+          <SalesContextCharts
+            timeline={reportsChartsData.timeline}
+            paymentAnalytics={paymentAnalytics}
+            timingAnalytics={timingAnalytics}
             periodLabel={comparisonTimeRanges.current.label}
-            totalSales={currentMetrics.totalSales}
-            cogs={currentMetrics.cogs}
-            grossProfit={currentMetrics.grossProfit}
-            fixedCosts={currentMetrics.fixedCosts}
-            variableCosts={currentMetrics.variableCosts}
-            totalExpenses={currentMetrics.totalExpenses}
-            totalTax={currentMetrics.totalTax}
-            netProfit={currentMetrics.netProfit}
-            orderCount={currentMetrics.orderCount}
-            averageOrderValue={currentMetrics.averageOrderValue}
-            fixedBreakdown={currentMetrics.fixedBreakdown}
-            variableBreakdown={currentMetrics.variableBreakdown}
           />
-        </TabsContent>
 
-        {/* Tab 2: MoM & YoY Growth Matrix */}
-        <TabsContent value="growth" className="space-y-4">
-          <GrowthMatrixView
-            currentPeriodLabel={comparisonTimeRanges.current.label}
-            previousPeriodLabel={comparisonTimeRanges.previous.label}
-            previousPeriodType={comparisonTimeRanges.previous.type}
-            yoyPeriodLabel={comparisonTimeRanges.yoy.label}
-            metrics={growthMetrics}
-          />
-        </TabsContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <ReportsBarCharts
+              timeline={reportsChartsData.timeline}
+              topProducts={reportsChartsData.topProducts}
+              expenseCategories={reportsChartsData.expenseCategories}
+              periodComparisons={reportsChartsData.periodComparisons}
+              periodLabel={comparisonTimeRanges.current.label}
+              singleCardMode="products"
+            />
+            <ReportsPieCharts
+              expenseCategories={reportsChartsData.expenseCategories}
+              paymentModes={reportsChartsData.paymentModes}
+              taxDistribution={reportsChartsData.taxDistribution}
+              taxRateSlabs={reportsChartsData.taxRateSlabs}
+              invoiceStatuses={reportsChartsData.invoiceStatuses}
+              periodLabel={comparisonTimeRanges.current.label}
+              totalExpenses={reportsChartsData.summary.totalExpenses}
+              totalCollected={reportsChartsData.summary.totalCollected}
+              collectionRate={reportsChartsData.summary.collectionRate}
+              totalTax={reportsChartsData.summary.totalTax}
+              totalSales={reportsChartsData.summary.totalRevenue}
+              singleCardMode="statuses"
+            />
+          </div>
 
-        {/* Tab 3: Sales Register */}
-        <TabsContent value="sales">
           <Card>
             <CardHeader className="py-4 border-b">
               <CardTitle className="text-base font-bold text-primary">Sales Register</CardTitle>
@@ -1337,7 +1795,99 @@ export default function ReportsPage() {
         </TabsContent>
 
         {/* Tab 4: GST Summary */}
-        <TabsContent value="taxes">
+        <TabsContent value="taxes" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Statutory Tax Composition (CGST, SGST, IGST Donut) */}
+            <ReportsPieCharts
+              expenseCategories={reportsChartsData.expenseCategories}
+              paymentModes={reportsChartsData.paymentModes}
+              taxDistribution={reportsChartsData.taxDistribution}
+              taxRateSlabs={reportsChartsData.taxRateSlabs}
+              invoiceStatuses={reportsChartsData.invoiceStatuses}
+              periodLabel={comparisonTimeRanges.current.label}
+              totalExpenses={reportsChartsData.summary.totalExpenses}
+              totalCollected={reportsChartsData.summary.totalCollected}
+              collectionRate={reportsChartsData.summary.collectionRate}
+              totalTax={reportsChartsData.summary.totalTax}
+              totalSales={reportsChartsData.summary.totalRevenue}
+              singleCardMode="taxes"
+            />
+
+            {/* Right: Statutory GST Rate Slabs & Compliance Matrix Card */}
+            <Card className="border border-border/70 shadow-xs bg-card/80 backdrop-blur-md overflow-hidden h-full flex flex-col justify-between">
+              <CardHeader className="p-4 sm:p-5 border-b border-border/40 flex flex-row items-center justify-between pb-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500">
+                      <BarChart3 className="h-4 w-4" />
+                    </div>
+                    <CardTitle className="text-base font-bold text-foreground">
+                      GST Rate Slabs & Compliance Matrix
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-xs text-muted-foreground">
+                    Taxable turnover and liability across 0%, 5%, 12%, 18%, 28% statutory slabs
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="text-[10px] font-mono border-emerald-500/20 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">
+                  Effective Rate: {currentMetrics.totalSales > 0 ? ((currentMetrics.totalTax / currentMetrics.totalSales) * 100).toFixed(1) : '0.0'}%
+                </Badge>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6 space-y-4 flex-1 flex flex-col justify-between">
+                {reportsChartsData.taxRateSlabs.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground text-xs font-medium">
+                    No taxable GST invoices recorded for this period.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {reportsChartsData.taxRateSlabs.map((slab) => {
+                      const sharePct = currentMetrics.totalTax > 0 ? (slab.tax / currentMetrics.totalTax) * 100 : 0;
+                      return (
+                        <div key={slab.rate} className="space-y-1 p-2.5 rounded-xl border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors">
+                          <div className="flex items-center justify-between text-xs font-semibold">
+                            <div className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: slab.color }} />
+                              <span className="font-bold text-foreground">{slab.rate} GST Slab</span>
+                              <span className="text-[10px] text-muted-foreground font-mono font-normal">
+                                (Taxable: {formatCurrency(slab.taxable)})
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 font-mono">
+                              <span className="text-muted-foreground text-[11px]">{sharePct.toFixed(1)}%</span>
+                              <span className="font-bold text-foreground">{formatCurrency(slab.tax)}</span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-muted/60 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${Math.max(sharePct, 2)}%`, backgroundColor: slab.color }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Statutory summary strip */}
+                <div className="pt-3 border-t border-border/40 grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 rounded-xl bg-muted/30 border border-border/30">
+                    <span className="text-[10px] text-muted-foreground block font-medium">Gross Taxable Turnover</span>
+                    <span className="font-mono font-bold text-foreground text-sm">
+                      {formatCurrency(reportsChartsData.taxRateSlabs.reduce((s, it) => s + (it.taxable || 0), 0))}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                    <span className="text-[10px] block font-medium opacity-90">Total Output GST Collected</span>
+                    <span className="font-mono font-bold text-sm">
+                      {formatCurrency(currentMetrics.totalTax)}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader className="py-4 border-b">
               <CardTitle className="text-base font-bold text-primary">GST Collection breakdown</CardTitle>
@@ -1370,7 +1920,104 @@ export default function ReportsPage() {
         </TabsContent>
 
         {/* Tab 5: Expenses */}
-        <TabsContent value="expenses">
+        <TabsContent value="expenses" className="space-y-6">
+          {/* Contextual Expense Head Donut & Categories Bar Chart */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <ReportsPieCharts
+              expenseCategories={reportsChartsData.expenseCategories}
+              paymentModes={reportsChartsData.paymentModes}
+              taxDistribution={reportsChartsData.taxDistribution}
+              taxRateSlabs={reportsChartsData.taxRateSlabs}
+              invoiceStatuses={reportsChartsData.invoiceStatuses}
+              periodLabel={comparisonTimeRanges.current.label}
+              totalExpenses={reportsChartsData.summary.totalExpenses}
+              totalCollected={reportsChartsData.summary.totalCollected}
+              collectionRate={reportsChartsData.summary.collectionRate}
+              totalTax={reportsChartsData.summary.totalTax}
+              totalSales={reportsChartsData.summary.totalRevenue}
+              singleCardMode="expenses"
+            />
+            <ReportsBarCharts
+              timeline={reportsChartsData.timeline}
+              topProducts={reportsChartsData.topProducts}
+              expenseCategories={reportsChartsData.expenseCategories}
+              periodComparisons={reportsChartsData.periodComparisons}
+              periodLabel={comparisonTimeRanges.current.label}
+              singleCardMode="expenses"
+            />
+          </div>
+
+          {/* Operating Cost Structure & Cash Burn Matrix */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border-border/60 shadow-xs">
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                  <span>Opex-to-Turnover Ratio</span>
+                  <Percent className="h-3.5 w-3.5 text-primary" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0 space-y-1">
+                <div className="text-2xl font-black font-mono text-primary dark:text-foreground">
+                  {currentMetrics.totalSales > 0 ? ((currentMetrics.totalExpenses / currentMetrics.totalSales) * 100).toFixed(1) : '0.0'}%
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Share of gross sales consumed by operating costs
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 shadow-xs">
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                  <span>Fixed Overhead Load</span>
+                  <Building2 className="h-3.5 w-3.5 text-blue-500" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0 space-y-1">
+                <div className="text-2xl font-black font-mono text-blue-600 dark:text-blue-400">
+                  {formatCurrency(currentMetrics.fixedCosts)}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Rent, salaries & telecom commitments
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 shadow-xs">
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                  <span>Variable Outflow Load</span>
+                  <Activity className="h-3.5 w-3.5 text-amber-500" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0 space-y-1">
+                <div className="text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
+                  {formatCurrency(currentMetrics.variableCosts)}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Electricity, fuel & variable maintenance
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 shadow-xs">
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                  <span>Largest Cost Center</span>
+                  <Award className="h-3.5 w-3.5 text-rose-500" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0 space-y-1">
+                <div className="text-lg font-black text-foreground truncate">
+                  {reportsChartsData.expenseCategories.length > 0 ? reportsChartsData.expenseCategories[0].name : 'None'}
+                </div>
+                <p className="text-[11px] text-muted-foreground font-mono">
+                  {reportsChartsData.expenseCategories.length > 0 ? `${formatCurrency(reportsChartsData.expenseCategories[0].amount)} (${reportsChartsData.expenseCategories[0].percentage}%)` : 'No expenses recorded'}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader className="py-4 border-b">
               <CardTitle className="text-base font-bold text-primary">Operating Expenses</CardTitle>
@@ -1410,7 +2057,89 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Tab 4: Customer Intelligence & Lifetime Value (LTV) */}
+        <TabsContent value="customers-ltv" className="space-y-6">
+          <CustomerLtvMatrix
+            data={customerLtvAnalytics}
+            periodLabel={comparisonTimeRanges.current.label}
+          />
+        </TabsContent>
+
+        {/* Tab 5: Inventory Velocity & Dead Stock Trapped Capital */}
+        <TabsContent value="inventory-velocity" className="space-y-6">
+          <InventoryVelocityMatrix
+            data={inventoryVelocityAnalytics}
+            periodLabel={comparisonTimeRanges.current.label}
+          />
+        </TabsContent>
+
+        {/* Tab 6: Unit Economics Suite */}
+        <TabsContent value="unit-economics" className="space-y-4">
+          <UnitEconomicsView
+            periodLabel={comparisonTimeRanges.current.label}
+            totalSales={currentMetrics.totalSales}
+            cogs={currentMetrics.cogs}
+            grossProfit={currentMetrics.grossProfit}
+            fixedCosts={currentMetrics.fixedCosts}
+            variableCosts={currentMetrics.variableCosts}
+            totalExpenses={currentMetrics.totalExpenses}
+            totalTax={currentMetrics.totalTax}
+            netProfit={currentMetrics.netProfit}
+            orderCount={currentMetrics.orderCount}
+            averageOrderValue={currentMetrics.averageOrderValue}
+            fixedBreakdown={currentMetrics.fixedBreakdown}
+            variableBreakdown={currentMetrics.variableBreakdown}
+          />
+        </TabsContent>
+
+        {/* Tab 7: MoM & YoY Growth Matrix */}
+        <TabsContent value="growth" className="space-y-4">
+          <GrowthMatrixView
+            currentPeriodLabel={comparisonTimeRanges.current.label}
+            previousPeriodLabel={comparisonTimeRanges.previous.label}
+            previousPeriodType={comparisonTimeRanges.previous.type}
+            yoyPeriodLabel={comparisonTimeRanges.yoy.label}
+            metrics={growthMetrics}
+          />
+        </TabsContent>
       </Tabs>
+
+      {/* Admin PIN Unlock Modal */}
+      <Dialog open={showPinModal} onOpenChange={setShowPinModal}>
+        <DialogContent className="max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Shield className="h-4 w-4 text-primary" /> Admin PIN Required
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Enter your Cashier/Owner PIN to unlock confidential profit margins and EBITDA.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleVerifyPin} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Security PIN</Label>
+              <Input
+                type="password"
+                maxLength={6}
+                placeholder="••••"
+                value={enteredPin}
+                onChange={e => setEnteredPin(e.target.value)}
+                className="text-center font-mono text-xl tracking-widest h-11"
+                autoFocus
+              />
+            </div>
+            <DialogFooter className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" onClick={() => setShowPinModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-primary font-bold">
+                Unlock
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

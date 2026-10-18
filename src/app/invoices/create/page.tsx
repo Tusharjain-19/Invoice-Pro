@@ -16,11 +16,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import {
   FileText, Plus, Trash2, Search, ArrowLeft, Save, IndianRupee, ShoppingCart, UserCheck, ShieldAlert,
-  Smartphone, Hash, CheckCircle2, QrCode, Tag, Layers, Check, AlertTriangle
+  Smartphone, Hash, CheckCircle2, QrCode, Tag, Layers, Check, AlertTriangle, Ticket, X, MessageCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Invoice, InvoiceItem, Product, Customer, InvoiceType, InvoiceStatus, Loan } from '@/types';
+import type { Invoice, InvoiceItem, Product, Customer, InvoiceType, InvoiceStatus, Loan, Coupon } from '@/types';
 import { INVOICE_TYPES, INVOICE_TYPE_LABELS, PAYMENT_MODES, INDIAN_STATES, FINANCE_PARTNERS, UNITS } from '@/types';
+import { validateCoupon } from '@/lib/couponAutomation';
 
 export const DEFAULT_INVOICE_TERMS = `1. Goods once sold will not be taken back or exchanged without prior authorization.
 2. Warranty claims, if any, are covered directly by respective manufacturers.
@@ -35,20 +36,25 @@ export default function CreateInvoicePage() {
   const settings = useLiveQuery(() => db.settings.toCollection().first());
   const customers = useLiveQuery(() => db.customers.toArray()) ?? [];
   const products = useLiveQuery(() => db.products.toArray()) ?? [];
+  const coupons = useLiveQuery(() => db.coupons.toArray()) ?? [];
 
   // Form State
   const [invoiceType, setInvoiceType] = useState<InvoiceType>('tax_invoice');
   const [invoiceNumber, setInvoiceNumber] = useState<string>('');
   const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [invoiceDueDate, setInvoiceDueDate] = useState<string>('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('custom');
+  const [clientType, setClientType] = useState<'b2c' | 'b2b'>('b2c');
 
   // Client Details
   const [customerName, setCustomerName] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
+  const [customerCity, setCustomerCity] = useState('');
+  const [customerPincode, setCustomerPincode] = useState('');
   const [customerGstin, setCustomerGstin] = useState('');
+  const [customerPan, setCustomerPan] = useState('');
   const [customerState, setCustomerState] = useState('Rajasthan');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
 
   // Items / Cart State
   const [cartItems, setCartItems] = useState<InvoiceItem[]>([]);
@@ -70,6 +76,9 @@ export default function CreateInvoicePage() {
   const [activeSplitModes, setActiveSplitModes] = useState<string[]>(['Cash']);
   const [overallDiscount, setOverallDiscount] = useState<number>(0);
   const [overallDiscountType, setOverallDiscountType] = useState<'percentage' | 'amount'>('amount');
+  const [couponCodeInput, setCouponCodeInput] = useState<string>('');
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [showCouponPicker, setShowCouponPicker] = useState<boolean>(false);
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [isTaxInclusive, setIsTaxInclusive] = useState<boolean>(false);
   const [isReverseCharge, setIsReverseCharge] = useState<boolean>(false);
@@ -139,23 +148,62 @@ export default function CreateInvoicePage() {
     }
   }, [settings]);
 
-  // Load customer details when selected
-  const handleCustomerSelect = (id: string) => {
-    setSelectedCustomerId(id);
-    if (id === 'custom') {
-      setCustomerName('');
-      setCustomerAddress('');
-      setCustomerGstin('');
-      setCustomerState(settings?.companyState || 'Rajasthan');
-      setCustomerPhone('');
-    } else {
-      const cust = customers.find(c => String(c.id) === id);
-      if (cust) {
-        setCustomerName(cust.name);
-        setCustomerAddress(`${cust.address || ''}, ${cust.city || ''}, ${cust.pincode || ''}`);
-        setCustomerGstin(cust.gstin || '');
-        setCustomerState(cust.state || 'Rajasthan');
-        setCustomerPhone(cust.phone || '');
+  // Handle B2C / B2B client type change
+  const handleClientTypeChange = (type: 'b2c' | 'b2b') => {
+    setClientType(type);
+    if (type === 'b2b') {
+      setInvoiceType('tax_invoice');
+    }
+  };
+
+  // Helper to apply complete customer details to form
+  const applyCustomerData = (c: Customer) => {
+    setCustomerName(c.name);
+    setCustomerPhone(c.phone || '');
+    setCustomerEmail(c.email || '');
+    setCustomerAddress(c.address || '');
+    setCustomerCity(c.city || '');
+    setCustomerPincode(c.pincode || '');
+    setCustomerGstin(c.gstin || '');
+    setCustomerPan(c.pan || (c.gstin && c.gstin.trim().length === 15 ? c.gstin.trim().substring(2, 12) : ''));
+    if (c.state) {
+      setCustomerState(c.state);
+    }
+    if (c.gstin && c.gstin.trim().length >= 15) {
+      setClientType('b2b');
+    }
+  };
+
+  // Handle typing or selecting customer name from suggestions
+  const handleCustomerNameChange = (val: string) => {
+    setCustomerName(val);
+    const matched = customers.find(c => c.name.toLowerCase() === val.trim().toLowerCase());
+    if (matched) {
+      applyCustomerData(matched);
+    }
+  };
+
+  // Handle typing or pasting customer phone (auto-matches customer directory)
+  const handleCustomerPhoneChange = (val: string) => {
+    setCustomerPhone(val);
+    const cleanDigits = val.replace(/\D/g, '');
+    if (cleanDigits.length >= 10) {
+      const last10 = cleanDigits.slice(-10);
+      const matched = customers.find(c => c.phone && c.phone.replace(/\D/g, '').endsWith(last10));
+      if (matched && (!customerName || customerName.trim().toLowerCase() === matched.name.toLowerCase())) {
+        applyCustomerData(matched);
+      }
+    }
+  };
+
+  // Handle GSTIN change with auto-uppercase and auto PAN extraction
+  const handleCustomerGstinChange = (val: string) => {
+    const gVal = val.toUpperCase().trim();
+    setCustomerGstin(gVal);
+    if (gVal.length >= 15) {
+      setClientType('b2b');
+      if (!customerPan || customerPan.length !== 10) {
+        setCustomerPan(gVal.substring(2, 12));
       }
     }
   };
@@ -203,29 +251,7 @@ function generateProductSerial(prefix: string = 'SN'): string {
   return `${prefix}-${dateStr}-${randomPart}`;
 }
 
-  // Add a blank custom item
-  const addBlankItem = () => {
-    const newItem: InvoiceItem = {
-      productId: null,
-      description: '',
-      hsnCode: '',
-      quantity: 1,
-      unit: 'NOS',
-      rate: 0,
-      discount: 0,
-      discountType: 'amount',
-      taxableAmount: 0,
-      gstRate: 18,
-      cgst: 0,
-      sgst: 0,
-      igst: 0,
-      total: 0,
-      imeiOrSerialNo: '',
-      modelNumber: '',
-    };
-    setCartItems(prev => [...prev, newItem]);
-    toast.success('Added blank invoice item');
-  };
+
 
   // Add Product to Cart
   const addProductToCart = (p: Product) => {
@@ -313,6 +339,67 @@ function generateProductSerial(prefix: string = 'SN'): string {
   const removeCartItem = (idx: number) => {
     setCartItems(prev => prev.filter((_, i) => i !== idx));
   };
+
+  // Coupon handling logic
+  const handleApplyCoupon = (codeToApply?: string) => {
+    const code = (codeToApply || couponCodeInput).trim().toUpperCase();
+    if (!code) {
+      toast.error('Please enter a coupon code.');
+      return;
+    }
+
+    const matchedCoupon = coupons.find(c => c.code.toUpperCase() === code);
+    if (!matchedCoupon) {
+      toast.error(`Invalid coupon code "${code}".`);
+      return;
+    }
+
+    const cartSubtotal = cartItems.reduce((acc, item) => acc + (item.quantity * item.rate), 0);
+    if (cartSubtotal <= 0) {
+      toast.error('Add items to invoice before applying a coupon.');
+      return;
+    }
+
+    const validation = validateCoupon(matchedCoupon, cartSubtotal);
+    if (!validation.isValid) {
+      toast.error(validation.reason || 'Coupon could not be applied.');
+      return;
+    }
+
+    setAppliedCoupon(matchedCoupon);
+    setOverallDiscount(validation.discountAmount);
+    setOverallDiscountType('amount');
+    setCouponCodeInput(matchedCoupon.code);
+    setShowCouponPicker(false);
+    toast.success(`Coupon "${matchedCoupon.code}" applied! Saving ${formatCurrency(validation.discountAmount)}`);
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setOverallDiscount(0);
+    setCouponCodeInput('');
+    toast.info('Coupon removed.');
+  };
+
+  // Watch for cart modifications while a coupon is applied
+  useEffect(() => {
+    if (appliedCoupon) {
+      const cartSubtotal = cartItems.reduce((acc, item) => acc + (item.quantity * item.rate), 0);
+      if (cartSubtotal <= 0) {
+        setAppliedCoupon(null);
+        setOverallDiscount(0);
+        return;
+      }
+      const validation = validateCoupon(appliedCoupon, cartSubtotal);
+      if (!validation.isValid) {
+        toast.warning(`Coupon "${appliedCoupon.code}" removed: ${validation.reason}`);
+        setAppliedCoupon(null);
+        setOverallDiscount(0);
+      } else {
+        setOverallDiscount(validation.discountAmount);
+      }
+    }
+  }, [cartItems, appliedCoupon]);
 
   const adjustInputRef = useRef<HTMLInputElement>(null);
 
@@ -690,12 +777,15 @@ function generateProductSerial(prefix: string = 'SN'): string {
         invoiceType,
         date: new Date(invoiceDate).getTime(),
         dueDate: invoiceDueDate ? new Date(invoiceDueDate).getTime() : null,
-        customerId: selectedCustomerId === 'custom' ? null : parseInt(selectedCustomerId, 10),
-        customerName,
-        customerAddress,
-        customerGstin,
+        customerId: null,
+        customerName: customerName.trim(),
+        customerAddress: customerAddress.trim(),
+        customerCity: customerCity.trim(),
+        customerPincode: customerPincode.trim(),
+        customerGstin: customerGstin.trim().toUpperCase(),
         customerState,
-        customerPhone,
+        customerPhone: customerPhone.trim(),
+        customerEmail: customerEmail.trim(),
         supplierId: null,
         supplierName: '',
         supplierAddress: '',
@@ -704,6 +794,8 @@ function generateProductSerial(prefix: string = 'SN'): string {
         subtotal: totals.subtotal,
         discount: overallDiscount,
         discountType: overallDiscountType,
+        appliedCouponCode: appliedCoupon?.code,
+        couponDiscountAmount: appliedCoupon ? overallDiscount : undefined,
         taxableAmount: totals.taxableAmount,
         cgst: totals.cgst,
         sgst: totals.sgst,
@@ -714,7 +806,9 @@ function generateProductSerial(prefix: string = 'SN'): string {
         paidAmount,
         balanceDue: Math.max(0, totals.totalAmount - paidAmount),
         status: status === 'draft' ? 'draft' : (paidAmount >= totals.totalAmount ? 'paid' : (paidAmount > 0 ? 'partial' : 'overdue')),
-        paymentMode,
+        paymentMode: isSplitPayment ? 'Split Payment' : paymentMode,
+        isSplitPayment,
+        paymentSplits: isSplitPayment ? splitAmounts : undefined,
         isReverseCharge,
         isTaxInclusive,
         notes,
@@ -726,34 +820,77 @@ function generateProductSerial(prefix: string = 'SN'): string {
       const hasEmi = (!isSplitPayment && paymentMode === 'EMI') || (isSplitPayment && splitAmounts.EMI > 0);
       const hasCredit = (!isSplitPayment && paymentMode === 'Credit') || (isSplitPayment && splitAmounts.Credit > 0);
 
+      // Auto-register or update customer in db.customers with complete WhatsApp and address profile
       let effectiveCustomerId: number | null = null;
-      if (selectedCustomerId && selectedCustomerId !== 'custom') {
-        effectiveCustomerId = parseInt(selectedCustomerId, 10);
-      } else if (customerName && customerName.trim()) {
-        let existing = null;
-        if (customerPhone) {
-          existing = await db.customers.where('phone').equals(customerPhone.trim()).first();
+      if (customerName && customerName.trim()) {
+        const cleanName = customerName.trim();
+        const cleanPhone = customerPhone.trim();
+        const cleanEmail = customerEmail.trim();
+        const cleanAddress = customerAddress.trim();
+        const cleanGstin = customerGstin.trim().toUpperCase();
+
+        // Extract or use PAN
+        let panToSave = customerPan.trim().toUpperCase();
+        if (!panToSave && cleanGstin.length === 15) {
+          panToSave = cleanGstin.substring(2, 12);
+        } else if (!panToSave && emiGovtIdType === 'PAN' && emiGovtIdNumber) {
+          panToSave = emiGovtIdNumber.trim().toUpperCase();
+        }
+
+        // Auto-extract City and Pincode from address if not explicitly typed
+        let resolvedCity = customerCity.trim();
+        let resolvedPincode = customerPincode.trim();
+        if (!resolvedPincode && cleanAddress) {
+          const pinMatch = cleanAddress.match(/\b([1-9][0-9]{5})\b/);
+          if (pinMatch) resolvedPincode = pinMatch[1];
+        }
+
+        // Look up if customer already exists by phone or name
+        let existing: Customer | null = null;
+        if (cleanPhone) {
+          const cleanDigits = cleanPhone.replace(/\D/g, '');
+          const last10 = cleanDigits.slice(-10);
+          const allCust = await db.customers.toArray();
+          existing = allCust.find(c => c.phone && c.phone.replace(/\D/g, '').endsWith(last10)) || null;
         }
         if (!existing) {
-          existing = await db.customers.where('name').equals(customerName.trim()).first();
+          const allCust = await db.customers.toArray();
+          existing = allCust.find(c => c.name.trim().toLowerCase() === cleanName.toLowerCase()) || null;
         }
+
         if (existing && existing.id) {
           effectiveCustomerId = existing.id;
+          // Update customer record with all latest details
+          await db.customers.update(existing.id, {
+            name: cleanName || existing.name,
+            phone: cleanPhone || existing.phone,
+            email: cleanEmail || existing.email,
+            address: cleanAddress || existing.address,
+            city: resolvedCity || existing.city,
+            state: customerState || existing.state || settings?.companyState || 'Rajasthan',
+            pincode: resolvedPincode || existing.pincode,
+            gstin: cleanGstin || existing.gstin,
+            pan: panToSave || existing.pan,
+            aadhaarNumber: (emiGovtIdType === 'Aadhaar' && emiGovtIdNumber) ? emiGovtIdNumber.trim() : existing.aadhaarNumber,
+            govtIdType: emiGovtIdType || existing.govtIdType,
+            govtIdNumber: emiGovtIdNumber ? emiGovtIdNumber.trim() : existing.govtIdNumber,
+            updatedAt: Date.now(),
+          });
         } else {
-          // Auto-save customer into database
+          // Add new customer into db.customers
           effectiveCustomerId = (await db.customers.add({
-            name: customerName.trim(),
-            phone: customerPhone || '',
-            email: '',
-            address: customerAddress || '',
-            city: '',
-            state: customerState || '',
-            pincode: '',
-            gstin: customerGstin || '',
-            pan: emiGovtIdType === 'PAN' ? emiGovtIdNumber : '',
-            aadhaarNumber: emiGovtIdType === 'Aadhaar' ? emiGovtIdNumber : undefined,
-            govtIdType: emiGovtIdType,
-            govtIdNumber: emiGovtIdNumber || undefined,
+            name: cleanName,
+            phone: cleanPhone,
+            email: cleanEmail,
+            address: cleanAddress,
+            city: resolvedCity,
+            state: customerState || settings?.companyState || 'Rajasthan',
+            pincode: resolvedPincode,
+            gstin: cleanGstin,
+            pan: panToSave,
+            aadhaarNumber: (emiGovtIdType === 'Aadhaar' && emiGovtIdNumber) ? emiGovtIdNumber.trim() : undefined,
+            govtIdType: emiGovtIdType || undefined,
+            govtIdNumber: emiGovtIdNumber ? emiGovtIdNumber.trim() : undefined,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           })) as number;
@@ -764,6 +901,17 @@ function generateProductSerial(prefix: string = 'SN'): string {
 
       // Add to database
       const id = await db.invoices.add(invoiceData);
+
+      // Increment coupon usage count if coupon was used and invoice is not draft
+      if (status !== 'draft' && appliedCoupon && appliedCoupon.id) {
+        const currentCoupon = await db.coupons.get(appliedCoupon.id);
+        if (currentCoupon) {
+          await db.coupons.update(appliedCoupon.id, {
+            timesUsed: (currentCoupon.timesUsed || 0) + 1,
+            updatedAt: Date.now(),
+          });
+        }
+      }
 
       // Create EMI Loan if selected and invoice is finalized
       if (status !== 'draft' && hasEmi) {
@@ -927,7 +1075,7 @@ function generateProductSerial(prefix: string = 'SN'): string {
         }
       }
  
-      toast.success('Invoice created successfully');
+      toast.success(`Invoice created! Customer "${customerName.trim()}" saved to Customers section.`);
       router.push(`/invoices/${id}`);
     } catch (err: any) {
       console.error(err);
@@ -987,44 +1135,141 @@ function generateProductSerial(prefix: string = 'SN'): string {
           </Card>
 
           {/* Customer Selection */}
-          <Card>
+          <Card className="border shadow-sm">
             <CardHeader className="py-4 border-b flex flex-row justify-between items-center">
-              <CardTitle className="text-base font-bold flex items-center gap-1.5"><UserCheck className="h-4 w-4 text-primary" /> Client Details</CardTitle>
-              <Select value={selectedCustomerId} onValueChange={handleCustomerSelect}>
-                <SelectTrigger className="w-48 h-8">
-                  <SelectValue placeholder="Select customer" />
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base font-bold flex items-center gap-1.5">
+                  <UserCheck className="h-4 w-4 text-primary" /> Client Details
+                </CardTitle>
+                <Badge variant="outline" className="hidden sm:inline-flex items-center gap-1 text-[11px] font-normal border-emerald-500/30 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 dark:text-emerald-400">
+                  <Check className="h-3 w-3" /> Auto-saves to Customers directory
+                </Badge>
+              </div>
+              <Select value={clientType} onValueChange={(val: 'b2c' | 'b2b') => handleClientTypeChange(val)}>
+                <SelectTrigger className="w-36 h-8 text-xs font-bold font-mono">
+                  <SelectValue placeholder="B2C" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="custom">-- Custom Client --</SelectItem>
-                  {customers.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                  <SelectItem value="b2c" className="font-bold text-xs">B2C</SelectItem>
+                  <SelectItem value="b2b" className="font-bold text-xs">B2B</SelectItem>
                 </SelectContent>
               </Select>
             </CardHeader>
-            <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="cust-name">Customer Name *</Label>
-                <Input id="cust-name" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Type name" />
+            <CardContent className="p-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-name">Customer Name *</Label>
+                  <Input
+                    id="cust-name"
+                    list="saved-customers-list"
+                    value={customerName}
+                    onChange={e => handleCustomerNameChange(e.target.value)}
+                    placeholder="Type name (e.g. Ramesh Sharma)"
+                  />
+                  <datalist id="saved-customers-list">
+                    {customers.map(c => (
+                      <option key={c.id} value={c.name}>
+                        {c.phone ? `${c.phone} · ` : ''}{c.city || ''}{c.gstin ? ' · GSTIN' : ''}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="cust-phone">Phone / WhatsApp</Label>
+                    <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-0.5">
+                      <MessageCircle className="h-2.5 w-2.5" /> WhatsApp
+                    </span>
+                  </div>
+                  <Input
+                    id="cust-phone"
+                    value={customerPhone}
+                    onChange={e => handleCustomerPhoneChange(e.target.value)}
+                    placeholder="10-digit number"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-email">Email Address <span className="text-[11px] text-muted-foreground font-normal">(Optional)</span></Label>
+                  <Input
+                    id="cust-email"
+                    type="email"
+                    value={customerEmail}
+                    onChange={e => setCustomerEmail(e.target.value)}
+                    placeholder="name@example.com"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="cust-phone">Phone Number</Label>
-                <Input id="cust-phone" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Type phone" />
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-addr">Billing Address</Label>
+                  <Input
+                    id="cust-addr"
+                    value={customerAddress}
+                    onChange={e => setCustomerAddress(e.target.value)}
+                    placeholder="Shop/Street address"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-city">City / Town</Label>
+                  <Input
+                    id="cust-city"
+                    value={customerCity}
+                    onChange={e => setCustomerCity(e.target.value)}
+                    placeholder="e.g. Jaipur"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Place of Supply (State)</Label>
+                  <Select value={customerState} onValueChange={setCustomerState}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {INDIAN_STATES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Place of Supply (State)</Label>
-                <Select value={customerState} onValueChange={setCustomerState}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {INDIAN_STATES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="sm:col-span-2 space-y-2">
-                <Label htmlFor="cust-addr">Billing Address</Label>
-                <Input id="cust-addr" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="Street, City, Pincode" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cust-gst">Customer GSTIN</Label>
-                <Input id="cust-gst" value={customerGstin} onChange={e => setCustomerGstin(e.target.value.toUpperCase())} placeholder="15-digit GSTIN" className="font-mono" />
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-pin">Pincode</Label>
+                  <Input
+                    id="cust-pin"
+                    value={customerPincode}
+                    onChange={e => setCustomerPincode(e.target.value)}
+                    placeholder="6-digit PIN"
+                    maxLength={6}
+                    className="font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="cust-gst">
+                      Customer GSTIN {clientType === 'b2b' ? <span className="text-destructive font-bold">*</span> : <span className="text-[11px] text-muted-foreground font-normal">(Optional)</span>}
+                    </Label>
+                    {clientType === 'b2b' && (
+                      <span className="text-[10px] font-bold text-primary font-mono">B2B Tax Credit</span>
+                    )}
+                  </div>
+                  <Input
+                    id="cust-gst"
+                    value={customerGstin}
+                    onChange={e => handleCustomerGstinChange(e.target.value)}
+                    placeholder={clientType === 'b2b' ? "15-digit GSTIN (08AAAAA0000A1Z5)" : "15-digit GSTIN"}
+                    className="font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-pan">PAN Number <span className="text-[11px] text-muted-foreground font-normal">(Auto/Optional)</span></Label>
+                  <Input
+                    id="cust-pan"
+                    value={customerPan}
+                    onChange={e => setCustomerPan(e.target.value.toUpperCase().trim())}
+                    placeholder="10-digit PAN (e.g. AAAAA0000A)"
+                    maxLength={10}
+                    className="font-mono"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1039,17 +1284,6 @@ function generateProductSerial(prefix: string = 'SN'): string {
                 <span className="font-mono text-xs text-muted-foreground font-medium">
                   ({cartItems.length} {cartItems.length === 1 ? 'item' : 'items'})
                 </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addBlankItem}
-                  className="h-8 text-xs font-bold gap-1.5 border-dashed border-primary/50 text-primary hover:bg-primary/10 shadow-xs"
-                >
-                  <Plus className="h-3.5 w-3.5 stroke-[2.5]" /> Blank Item
-                </Button>
               </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-5 space-y-4">
@@ -1071,7 +1305,7 @@ function generateProductSerial(prefix: string = 'SN'): string {
                   <div className="absolute top-[105%] left-0 right-0 z-50 bg-background border rounded-lg shadow-xl max-h-56 overflow-y-auto divide-y">
                     {searchedProducts.length === 0 ? (
                       <div className="p-4 text-sm text-center text-muted-foreground">
-                        No matching product found. You can click &quot;+ Add Blank Item&quot; to add a custom item.
+                        No matching product found in catalog.
                       </div>
                     ) : (
                       searchedProducts.map(p => (
@@ -1107,12 +1341,9 @@ function generateProductSerial(prefix: string = 'SN'): string {
                     <div>
                       <p className="font-semibold text-foreground text-sm">No items added to invoice yet</p>
                       <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-                        Search your product catalog above, or click the button below to add an ad-hoc device or product with IMEI / Serial tracking.
+                        Search your product catalog above to add items to this invoice.
                       </p>
                     </div>
-                    <Button type="button" size="sm" onClick={addBlankItem} className="gap-1.5 text-xs font-semibold">
-                      <Plus className="h-3.5 w-3.5" /> Add First Item
-                    </Button>
                   </div>
                 ) : (
                   cartItems.map((item, idx) => (
@@ -1380,20 +1611,8 @@ function generateProductSerial(prefix: string = 'SN'): string {
                 )}
               </div>
 
-              {/* Action row below items: Add Item & Tax Toggles */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addBlankItem}
-                    className="h-9 text-xs font-bold gap-1.5 border-dashed border-primary/50 text-primary hover:bg-primary/5 shadow-xs"
-                  >
-                    <Plus className="h-3.5 w-3.5 stroke-[2.5]" /> Add Blank Item
-                  </Button>
-                </div>
-
+              {/* Action row below items: Tax Toggles */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-end gap-4 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex flex-wrap gap-4 text-xs">
                   <label className="flex items-center gap-2 font-medium cursor-pointer select-none">
                     <input 
@@ -1456,6 +1675,15 @@ function generateProductSerial(prefix: string = 'SN'): string {
                     <td className="text-muted-foreground">Total Tax (GST)</td>
                     <td className="font-mono font-semibold">{formatCurrency(totals.totalTax)}</td>
                   </tr>
+                  {overallDiscount > 0 && (
+                    <tr className="flex justify-between py-1 border-b border-dashed text-emerald-600 dark:text-emerald-400 font-semibold">
+                      <td className="flex items-center gap-1">
+                        <Ticket className="h-3.5 w-3.5" />
+                        Coupon Discount {appliedCoupon ? `(${appliedCoupon.code})` : ''}
+                      </td>
+                      <td className="font-mono">-{formatCurrency(totals.discount)}</td>
+                    </tr>
+                  )}
                   {totals.roundOff !== 0 && (
                     <tr className="flex justify-between py-1 border-b border-dashed">
                       <td className="text-muted-foreground">Round-off Offset</td>
@@ -1468,6 +1696,121 @@ function generateProductSerial(prefix: string = 'SN'): string {
                   </tr>
                 </tbody>
               </table>
+
+              {/* Coupon / Promo Code Application Section */}
+              <div className="bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/25 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                    <Ticket className="h-3.5 w-3.5 text-emerald-600" /> Apply Coupon Code
+                  </Label>
+                  {coupons.filter(c => c.isActive && c.expiryDate >= Date.now()).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCouponPicker(!showCouponPicker)}
+                      className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                    >
+                      {showCouponPicker ? 'Hide Offers' : 'View Offers'}
+                    </button>
+                  )}
+                </div>
+
+                {appliedCoupon ? (
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <p className="text-xs font-black text-emerald-700 dark:text-emerald-400 font-mono">
+                          {appliedCoupon.code} APPLIED
+                        </p>
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-500">
+                          Saving {formatCurrency(overallDiscount)} on this invoice
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveCoupon}
+                      className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive font-semibold"
+                    >
+                      <X className="h-3.5 w-3.5 mr-1" />
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="e.g. FESTIVE500"
+                      value={couponCodeInput}
+                      onChange={e => setCouponCodeInput(e.target.value.toUpperCase())}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleApplyCoupon();
+                        }
+                      }}
+                      className="h-9 font-mono font-bold uppercase text-xs bg-background border-emerald-500/30 focus-visible:ring-emerald-500"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleApplyCoupon()}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3.5 h-9 rounded-lg shrink-0 text-xs shadow-xs"
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                )}
+
+                {/* Available Offers Drawer */}
+                {showCouponPicker && !appliedCoupon && (
+                  <div className="space-y-1.5 pt-2 border-t border-emerald-500/20 max-h-48 overflow-y-auto pr-1">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                      Available Active Coupons:
+                    </p>
+                    {coupons
+                      .filter(c => c.isActive && c.expiryDate >= Date.now())
+                      .map(c => {
+                        const cartSubtotal = cartItems.reduce((acc, item) => acc + (item.quantity * item.rate), 0);
+                        const isEligible = cartSubtotal >= c.minOrderValue;
+                        return (
+                          <div
+                            key={c.id}
+                            className="flex items-center justify-between p-2 rounded-lg bg-background border border-emerald-500/20 text-xs"
+                          >
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5 font-mono font-black text-primary">
+                                <span>{c.code}</span>
+                                <Badge variant="outline" className="text-[9px] py-0 px-1 border-emerald-500/40 text-emerald-600">
+                                  {c.discountType === 'percentage' ? `${c.discountValue}% OFF` : `₹${c.discountValue} OFF`}
+                                </Badge>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                Min spend: ₹{c.minOrderValue.toLocaleString('en-IN')}
+                                {!isEligible && (
+                                  <span className="text-amber-600 dark:text-amber-400 font-semibold ml-1">
+                                    (Add ₹{(c.minOrderValue - cartSubtotal).toLocaleString('en-IN')} more)
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={!isEligible}
+                              onClick={() => handleApplyCoupon(c.code)}
+                              className="h-7 text-[11px] font-bold border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50"
+                            >
+                              Apply
+                            </Button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
 
               {/* Adjust / Override Final Amount panel */}
               <div className="bg-[#f0f9ff] dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/35 rounded-xl p-3.5 space-y-2.5">

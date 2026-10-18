@@ -13,11 +13,12 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Users, Plus, Search, Edit, Trash2, Phone, Mail, MapPin, MoreHorizontal } from 'lucide-react';
+import { Users, Plus, Search, Edit, Trash2, Phone, Mail, MapPin, MoreHorizontal, MessageCircle, Sparkles, FileText } from 'lucide-react';
 import { toast } from 'sonner';
+import { CustomerKhataLedgerModal } from '@/components/customers/CustomerKhataLedgerModal';
 
 const emptyCustomer: Partial<Customer> = {
-  name: '', phone: '', email: '', address: '', city: '', state: '', pincode: '', gstin: '', pan: '',
+  name: '', phone: '', email: '', address: '', city: '', state: '', pincode: '', gstin: '', pan: '', loyaltyPoints: 0,
 };
 
 export default function CustomersPage() {
@@ -26,6 +27,8 @@ export default function CustomersPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Partial<Customer>>(emptyCustomer);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [selectedKhataCustomer, setSelectedKhataCustomer] = useState<Customer | null>(null);
+  const [khataOpen, setKhataOpen] = useState(false);
 
   // Auto-open Add Customer modal when arriving from shortcut links
   useEffect(() => {
@@ -107,29 +110,94 @@ export default function CustomersPage() {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary font-bold text-sm">
-                      {customer.name.charAt(0).toUpperCase()}
+                      {(customer.name?.trim()?.[0] || 'C').toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-semibold text-sm">{customer.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm">{customer.name || 'Unnamed Customer'}</p>
+                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold text-[10px] border border-amber-500/20" title="Loyalty Points">
+                          <Sparkles className="h-2.5 w-2.5" />
+                          <span>{customer.loyaltyPoints || 0} pts</span>
+                        </div>
+                      </div>
                       {customer.gstin && <span className="text-[11px] font-mono text-muted-foreground block mt-0.5">{customer.gstin}</span>}
                     </div>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEdit(customer)}><Edit className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive" onClick={() => setDeleteConfirmId(customer.id!)}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs font-medium gap-1 text-primary border-primary/30 hover:bg-primary/5"
+                      onClick={() => { setSelectedKhataCustomer(customer); setKhataOpen(true); }}
+                      title="Open Customer Ledger / Khata Statement"
+                    >
+                      <FileText className="h-3 w-3" /> Khata
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-70 hover:opacity-100">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => { setSelectedKhataCustomer(customer); setKhataOpen(true); }}>
+                          <FileText className="h-4 w-4 mr-2 text-primary" /> Khata Statement
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openEdit(customer)}><Edit className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive" onClick={() => setDeleteConfirmId(customer.id!)}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
-                <div className="space-y-1.5 text-xs text-muted-foreground">
-                  {customer.phone && <div className="flex items-center gap-2"><Phone className="h-3 w-3" />{customer.phone}</div>}
-                  {customer.email && <div className="flex items-center gap-2"><Mail className="h-3 w-3" />{customer.email}</div>}
-                  {(customer.city || customer.state) && <div className="flex items-center gap-2"><MapPin className="h-3 w-3" />{[customer.city, customer.state].filter(Boolean).join(', ')}</div>}
+                <div className="space-y-2 text-xs text-muted-foreground">
+                  {customer.phone && (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 font-medium text-foreground">
+                        <Phone className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <span>{customer.phone}</span>
+                      </div>
+                      <a
+                        href={`https://wa.me/${customer.phone.replace(/\D/g, '').length === 10 ? '91' + customer.phone.replace(/\D/g, '') : customer.phone.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400 dark:bg-emerald-950/40 transition-colors"
+                        title="Chat on WhatsApp"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <MessageCircle className="h-3 w-3" /> WhatsApp
+                      </a>
+                    </div>
+                  )}
+                  {customer.email && (
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Mail className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <a href={`mailto:${customer.email}`} className="truncate hover:underline hover:text-foreground">
+                        {customer.email}
+                      </a>
+                    </div>
+                  )}
+                  {(customer.address || customer.city || customer.state) && (
+                    <div className="flex items-start gap-1.5">
+                      <MapPin className="h-3 w-3 shrink-0 text-muted-foreground mt-0.5" />
+                      <span className="line-clamp-2">
+                        {[customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', ')}
+                      </span>
+                    </div>
+                  )}
+                  {(customer.pan || customer.gstin) && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/50">
+                      {customer.pan && (
+                        <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+                          PAN: {customer.pan}
+                        </Badge>
+                      )}
+                      {customer.gstin && (
+                        <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 text-primary border-primary/30">
+                          GSTIN: {customer.gstin}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -162,9 +230,21 @@ export default function CustomersPage() {
               </div>
               <div className="space-y-2"><Label>Pincode</Label><Input value={formData.pincode || ''} onChange={e => updateForm({ pincode: e.target.value })} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2"><Label>GSTIN</Label><Input value={formData.gstin || ''} onChange={e => updateForm({ gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" /></div>
               <div className="space-y-2"><Label>PAN</Label><Input value={formData.pan || ''} onChange={e => updateForm({ pan: e.target.value.toUpperCase() })} placeholder="AAAAA0000A" /></div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <Sparkles className="h-3 w-3 text-amber-500" /> Loyalty Points
+                </Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={formData.loyaltyPoints ?? 0}
+                  onChange={e => updateForm({ loyaltyPoints: Math.max(0, parseInt(e.target.value) || 0) })}
+                  placeholder="0"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -184,6 +264,13 @@ export default function CustomersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Customer Khata Ledger Modal */}
+      <CustomerKhataLedgerModal
+        open={khataOpen}
+        onOpenChange={setKhataOpen}
+        customer={selectedKhataCustomer}
+      />
     </div>
   );
 }

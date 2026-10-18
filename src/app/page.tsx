@@ -31,6 +31,7 @@ import { CashFlowTrendChart, CashFlowPoint } from '@/components/dashboard/CashFl
 import { DesignerReportModal } from '@/components/dashboard/DesignerReportModal';
 import type { DesignerReportData } from '@/components/dashboard/DesignerReportPDF';
 import { TodayEmiCollectionsCard, DueEmiItem } from '@/components/dashboard/TodayEmiCollectionsCard';
+import { calculatePaymentModesAnalytics } from '@/lib/analyticsHelper';
 
 // KPI Icons
 import {
@@ -44,6 +45,12 @@ import {
   Package,
   FileText,
   X,
+  CreditCard,
+  Smartphone,
+  Banknote,
+  Landmark,
+  ShieldAlert,
+  Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -423,41 +430,33 @@ export default function DashboardPage() {
 
   // 3. Payment Modes & Collections Breakdown
   const paymentModesData: PaymentModesData = useMemo(() => {
-    const modeMap = new Map<string, { amount: number; count: number }>();
-    let totalCollected = 0;
-    let totalPending = 0;
+    const targetInvoices = filteredInvoices.length > 0 ? filteredInvoices : invoices;
+    return calculatePaymentModesAnalytics(targetInvoices);
+  }, [filteredInvoices, invoices]);
 
-    invoices.forEach((inv) => {
-      const mode = inv.paymentMode || 'Cash';
-      const paid = inv.paidAmount || (inv.status === 'paid' ? inv.totalAmount : 0);
-      const due = inv.balanceDue || 0;
-
-      totalCollected += paid;
-      totalPending += due;
-
-      const current = modeMap.get(mode) || { amount: 0, count: 0 };
-      current.amount += paid;
-      current.count += 1;
-      modeMap.set(mode, current);
-    });
-
-    const totalTurnover = totalCollected + totalPending;
-    const items = Array.from(modeMap.entries()).map(([mode, data]) => ({
-      mode,
-      amount: data.amount,
-      count: data.count,
-      percentage: totalCollected > 0 ? (data.amount / totalCollected) * 100 : 0,
-    }));
-
-    const collectionRatePct = totalTurnover > 0 ? (totalCollected / totalTurnover) * 100 : 100;
+  // Quick channels lookup for the dashboard overview strip
+  const paymentChannelSummary = useMemo(() => {
+    const getChannel = (mode: string) => {
+      const found = paymentModesData.items.find((i) => i.mode.toLowerCase() === mode.toLowerCase());
+      return {
+        amount: found?.amount || 0,
+        count: found?.count || 0,
+        percentage: found?.percentage || 0,
+      };
+    };
 
     return {
-      items,
-      totalCollected,
-      totalPending,
-      collectionRatePct,
+      upi: getChannel('UPI'),
+      card: getChannel('Card'),
+      cash: getChannel('Cash'),
+      bank: getChannel('Bank Transfer'),
+      emi: getChannel('EMI'),
+      totalBills: paymentModesData.items.reduce((s, it) => s + (it.count || 0), 0),
+      avgTicket: paymentModesData.items.reduce((s, it) => s + (it.count || 0), 0) > 0
+        ? paymentModesData.totalCollected / paymentModesData.items.reduce((s, it) => s + (it.count || 0), 0)
+        : 0,
     };
-  }, [invoices]);
+  }, [paymentModesData]);
 
   // 4. Top Selling Products Matrix Data
   const topProductsData: TopProductItem[] = useMemo(() => {
@@ -942,6 +941,134 @@ export default function DashboardPage() {
           />
         </div>
       </div>
+
+      {/* Real-time Collections by Payment Mode Strip (Symmetrical 4+4 2-Liner) */}
+      {(() => {
+        const getDynamicAmountClass = (val: number | string) => {
+          const str = typeof val === 'number' ? formatCurrency(val) : String(val);
+          if (str.length > 14) return 'text-xs sm:text-sm';
+          if (str.length > 10) return 'text-sm sm:text-base';
+          return 'text-base sm:text-lg';
+        };
+
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Row 1, Card 1: ALL MODES TOTAL (HERO CARD) */}
+            <div className="bg-primary/10 border-2 border-primary/30 rounded-xl p-3 shadow-xs hover:border-primary/50 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between text-primary text-[11px] font-bold">
+                <span className="flex items-center gap-1.5"><IndianRupee className="h-3.5 w-3.5" /> All Modes Total</span>
+                <span className="text-[10px] font-mono bg-primary/20 px-1.5 py-0.2 rounded font-black">{paymentModesData.collectionRatePct.toFixed(0)}%</span>
+              </div>
+              <div className="mt-1.5">
+                <div className={`font-black font-mono text-primary dark:text-foreground tracking-tight truncate ${getDynamicAmountClass(paymentModesData.totalCollected)}`} title={formatCurrency(paymentModesData.totalCollected)}>
+                  {formatCurrency(paymentModesData.totalCollected)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">Total collections received</div>
+              </div>
+            </div>
+
+            {/* Row 1, Card 2: UPI */}
+            <div className="bg-card/70 border border-indigo-500/20 rounded-xl p-3 shadow-xs hover:border-indigo-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between text-muted-foreground text-[11px] font-semibold">
+                <span className="flex items-center gap-1.5"><Smartphone className="h-3.5 w-3.5 text-indigo-500" /> UPI</span>
+                <span className="text-[10px] font-mono text-indigo-500 font-bold">{paymentChannelSummary.upi.count} bills</span>
+              </div>
+              <div className="mt-1.5">
+                <div className={`font-black font-mono text-foreground tracking-tight truncate ${getDynamicAmountClass(paymentChannelSummary.upi.amount)}`} title={formatCurrency(paymentChannelSummary.upi.amount)}>
+                  {formatCurrency(paymentChannelSummary.upi.amount)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{paymentChannelSummary.upi.percentage.toFixed(0)}% of collections</div>
+              </div>
+            </div>
+
+            {/* Row 1, Card 3: Card */}
+            <div className="bg-card/70 border border-cyan-500/20 rounded-xl p-3 shadow-xs hover:border-cyan-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between text-muted-foreground text-[11px] font-semibold">
+                <span className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 text-cyan-500" /> Card / POS</span>
+                <span className="text-[10px] font-mono text-cyan-500 font-bold">{paymentChannelSummary.card.count} bills</span>
+              </div>
+              <div className="mt-1.5">
+                <div className={`font-black font-mono text-foreground tracking-tight truncate ${getDynamicAmountClass(paymentChannelSummary.card.amount)}`} title={formatCurrency(paymentChannelSummary.card.amount)}>
+                  {formatCurrency(paymentChannelSummary.card.amount)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{paymentChannelSummary.card.percentage.toFixed(0)}% of collections</div>
+              </div>
+            </div>
+
+            {/* Row 1, Card 4: Cash */}
+            <div className="bg-card/70 border border-emerald-500/20 rounded-xl p-3 shadow-xs hover:border-emerald-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between text-muted-foreground text-[11px] font-semibold">
+                <span className="flex items-center gap-1.5"><Banknote className="h-3.5 w-3.5 text-emerald-500" /> Cash</span>
+                <span className="text-[10px] font-mono text-emerald-500 font-bold">{paymentChannelSummary.cash.count} bills</span>
+              </div>
+              <div className="mt-1.5">
+                <div className={`font-black font-mono text-foreground tracking-tight truncate ${getDynamicAmountClass(paymentChannelSummary.cash.amount)}`} title={formatCurrency(paymentChannelSummary.cash.amount)}>
+                  {formatCurrency(paymentChannelSummary.cash.amount)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{paymentChannelSummary.cash.percentage.toFixed(0)}% of collections</div>
+              </div>
+            </div>
+
+            {/* Row 2, Card 5: Bank Transfer */}
+            <div className="bg-card/70 border border-blue-500/20 rounded-xl p-3 shadow-xs hover:border-blue-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between text-muted-foreground text-[11px] font-semibold">
+                <span className="flex items-center gap-1.5"><Landmark className="h-3.5 w-3.5 text-blue-500" /> Net Banking</span>
+                <span className="text-[10px] font-mono text-blue-500 font-bold">{paymentChannelSummary.bank.count} bills</span>
+              </div>
+              <div className="mt-1.5">
+                <div className={`font-black font-mono text-foreground tracking-tight truncate ${getDynamicAmountClass(paymentChannelSummary.bank.amount)}`} title={formatCurrency(paymentChannelSummary.bank.amount)}>
+                  {formatCurrency(paymentChannelSummary.bank.amount)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{paymentChannelSummary.bank.percentage.toFixed(0)}% of collections</div>
+              </div>
+            </div>
+
+            {/* Row 2, Card 6: EMI */}
+            <div className="bg-card/70 border border-purple-500/20 rounded-xl p-3 shadow-xs hover:border-purple-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between text-muted-foreground text-[11px] font-semibold">
+                <span className="flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5 text-purple-500" /> EMI Loans</span>
+                <span className="text-[10px] font-mono text-purple-500 font-bold">{paymentChannelSummary.emi.count} bills</span>
+              </div>
+              <div className="mt-1.5">
+                <div className={`font-black font-mono text-foreground tracking-tight truncate ${getDynamicAmountClass(paymentChannelSummary.emi.amount)}`} title={formatCurrency(paymentChannelSummary.emi.amount)}>
+                  {formatCurrency(paymentChannelSummary.emi.amount)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{paymentChannelSummary.emi.percentage.toFixed(0)}% of collections</div>
+              </div>
+            </div>
+
+            {/* Row 2, Card 7: Credit / Pending Due */}
+            <div className="bg-card/70 border border-rose-500/20 rounded-xl p-3 shadow-xs hover:border-rose-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between text-muted-foreground text-[11px] font-semibold">
+                <span className="flex items-center gap-1.5"><ShieldAlert className="h-3.5 w-3.5 text-rose-500" /> Credit Dues</span>
+                <span className={`text-[10px] font-mono font-bold ${paymentModesData.totalPending > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                  {paymentModesData.totalPending > 0 ? 'Pending' : 'Settled'}
+                </span>
+              </div>
+              <div className="mt-1.5">
+                <div className={`font-black font-mono text-rose-600 dark:text-rose-400 tracking-tight truncate ${getDynamicAmountClass(paymentModesData.totalPending)}`} title={formatCurrency(paymentModesData.totalPending)}>
+                  {formatCurrency(paymentModesData.totalPending)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">Outstanding unpaid balance</div>
+              </div>
+            </div>
+
+            {/* Row 2, Card 8: Average Bill Ticket Size */}
+            <div className="bg-card/70 border border-amber-500/20 rounded-xl p-3 shadow-xs hover:border-amber-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between text-muted-foreground text-[11px] font-semibold">
+                <span className="flex items-center gap-1.5"><Activity className="h-3.5 w-3.5 text-amber-500" /> Avg Ticket Size</span>
+                <span className="text-[10px] font-mono text-amber-500 font-bold">{paymentChannelSummary.totalBills} paid</span>
+              </div>
+              <div className="mt-1.5">
+                <div className={`font-black font-mono text-foreground tracking-tight truncate ${getDynamicAmountClass(paymentChannelSummary.avgTicket)}`} title={formatCurrency(paymentChannelSummary.avgTicket)}>
+                  {formatCurrency(paymentChannelSummary.avgTicket)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">Realized average per bill</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Render Widgets dynamically based on sorted/visibility config */}
       {widgets.map((widget) => {

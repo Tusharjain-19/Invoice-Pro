@@ -34,6 +34,7 @@ import {
   PhoneCall,
   SlidersHorizontal,
   Upload,
+  MessageCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -43,6 +44,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { WhatsAppDueReminderModal } from '@/components/payments/WhatsAppDueReminderModal';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
@@ -71,9 +73,12 @@ export default function LoansPage() {
   const [isCollectOpen, setIsCollectOpen] = useState(false);
   const [isCreditLimitOpen, setIsCreditLimitOpen] = useState(false);
   const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
+  const [reminderLoan, setReminderLoan] = useState<Loan | null>(null);
 
   // New Loan Form State
   const [newLoanCustomerId, setNewLoanCustomerId] = useState<string>('');
+  const [newLoanCustomerName, setNewLoanCustomerName] = useState<string>('');
+  const [newLoanCustomerPhone, setNewLoanCustomerPhone] = useState<string>('');
   const [newLoanType, setNewLoanType] = useState<'store' | 'finance' | 'credit'>('store');
   const [newLoanPartner, setNewLoanPartner] = useState<string>('Bajaj Finance');
   const [newLoanPrincipal, setNewLoanPrincipal] = useState<number>(50000);
@@ -111,6 +116,8 @@ export default function LoansPage() {
     setNewLoanCustomerId(cid);
     const c = customers.find((x) => x.id?.toString() === cid);
     if (c) {
+      setNewLoanCustomerName(c.name);
+      setNewLoanCustomerPhone(c.phone || '');
       if (c.pan) setNewLoanPan(c.pan);
       if (c.aadhaarNumber) {
         setNewLoanGovtIdType('Aadhaar');
@@ -119,6 +126,25 @@ export default function LoansPage() {
         setNewLoanGovtIdType(c.govtIdType || 'Aadhaar');
         setNewLoanGovtIdNumber(c.govtIdNumber);
       }
+    }
+  };
+
+  const handleLoanCustomerNameChange = (nameVal: string) => {
+    setNewLoanCustomerName(nameVal);
+    const matched = customers.find((c) => c.name.toLowerCase() === nameVal.trim().toLowerCase());
+    if (matched && matched.id) {
+      setNewLoanCustomerId(matched.id.toString());
+      setNewLoanCustomerPhone(matched.phone || '');
+      if (matched.pan) setNewLoanPan(matched.pan);
+      if (matched.aadhaarNumber) {
+        setNewLoanGovtIdType('Aadhaar');
+        setNewLoanGovtIdNumber(matched.aadhaarNumber);
+      } else if (matched.govtIdNumber) {
+        setNewLoanGovtIdType(matched.govtIdType || 'Aadhaar');
+        setNewLoanGovtIdNumber(matched.govtIdNumber);
+      }
+    } else {
+      setNewLoanCustomerId('');
     }
   };
 
@@ -380,15 +406,68 @@ export default function LoansPage() {
   // Create New Loan Action
   const handleCreateNewLoan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLoanCustomerId) {
-      toast.error('Please select a customer for the loan account');
+    if (!newLoanCustomerName || !newLoanCustomerName.trim()) {
+      toast.error('Please enter customer name for the loan account');
       return;
     }
 
-    const customer = customers.find((c) => c.id === parseInt(newLoanCustomerId, 10));
+    const cleanName = newLoanCustomerName.trim();
+    const cleanPhone = newLoanCustomerPhone.trim();
+
+    let customer: Customer | null = null;
+    if (newLoanCustomerId) {
+      customer = customers.find((c) => c.id === parseInt(newLoanCustomerId, 10)) || null;
+    }
+    if (!customer && cleanPhone) {
+      const cleanDigits = cleanPhone.replace(/\D/g, '');
+      const last10 = cleanDigits.slice(-10);
+      customer = customers.find((c) => c.phone && c.phone.replace(/\D/g, '').endsWith(last10)) || null;
+    }
     if (!customer) {
-      toast.error('Customer not found');
-      return;
+      customer = customers.find((c) => c.name.toLowerCase() === cleanName.toLowerCase()) || null;
+    }
+
+    let customerIdToUse: number;
+    let customerNameToUse = cleanName;
+
+    if (customer && customer.id) {
+      customerIdToUse = customer.id;
+      customerNameToUse = customer.name;
+      // Update existing customer record with any new phone/pan/govtId
+      const custUpdates: Partial<Customer> = {};
+      if (cleanPhone && !customer.phone) custUpdates.phone = cleanPhone;
+      if (newLoanGovtIdType === 'Aadhaar' && newLoanGovtIdNumber && !customer.aadhaarNumber) {
+        custUpdates.aadhaarNumber = newLoanGovtIdNumber;
+      }
+      if (newLoanPan && !customer.pan) {
+        custUpdates.pan = newLoanPan;
+      }
+      if (newLoanGovtIdNumber && !customer.govtIdNumber) {
+        custUpdates.govtIdType = newLoanGovtIdType;
+        custUpdates.govtIdNumber = newLoanGovtIdNumber;
+      }
+      if (Object.keys(custUpdates).length > 0) {
+        custUpdates.updatedAt = Date.now();
+        await db.customers.update(customer.id, custUpdates);
+      }
+    } else {
+      // Auto-save new customer into db.customers so they appear in Customers section
+      customerIdToUse = (await db.customers.add({
+        name: cleanName,
+        phone: cleanPhone,
+        email: '',
+        address: '',
+        city: '',
+        state: 'Rajasthan',
+        pincode: '',
+        gstin: '',
+        pan: newLoanPan || (newLoanGovtIdType === 'PAN' ? newLoanGovtIdNumber : ''),
+        aadhaarNumber: newLoanGovtIdType === 'Aadhaar' ? newLoanGovtIdNumber : undefined,
+        govtIdType: newLoanGovtIdType || undefined,
+        govtIdNumber: newLoanGovtIdNumber ? newLoanGovtIdNumber.trim() : undefined,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })) as number;
     }
 
     const principal = Number(newLoanPrincipal) || 0;
@@ -430,8 +509,8 @@ export default function LoansPage() {
       // 1. Add to loans DB with Govt ID & KYC Credentials
       const loanId = await db.loans.add({
         loanNumber,
-        customerId: customer.id!,
-        customerName: customer.name,
+        customerId: customerIdToUse,
+        customerName: customerNameToUse,
         loanType: newLoanType,
         status: 'active',
         startDate: startTimestamp,
@@ -448,8 +527,8 @@ export default function LoansPage() {
         nextDueDate: startTimestamp + 30 * 24 * 60 * 60 * 1000,
         financePartnerName: newLoanType === 'finance' ? newLoanPartner : undefined,
         remarks: newLoanRemarks || 'Disbursed via Loans & EMI suite',
-        aadhaarNumber: newLoanGovtIdType === 'Aadhaar' ? newLoanGovtIdNumber : (customer.aadhaarNumber || undefined),
-        panNumber: newLoanPan || (newLoanGovtIdType === 'PAN' ? newLoanGovtIdNumber : (customer.pan || undefined)),
+        aadhaarNumber: newLoanGovtIdType === 'Aadhaar' ? newLoanGovtIdNumber : undefined,
+        panNumber: newLoanPan || (newLoanGovtIdType === 'PAN' ? newLoanGovtIdNumber : undefined),
         govtIdType: newLoanGovtIdType,
         govtIdNumber: newLoanGovtIdNumber || undefined,
         guarantorName: newLoanGuarantorName || undefined,
@@ -459,24 +538,6 @@ export default function LoansPage() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
-
-      // Update customer record with newly entered Govt ID or PAN
-      if (customer.id) {
-        const custUpdates: Partial<Customer> = {};
-        if (newLoanGovtIdType === 'Aadhaar' && newLoanGovtIdNumber && !customer.aadhaarNumber) {
-          custUpdates.aadhaarNumber = newLoanGovtIdNumber;
-        }
-        if (newLoanPan && !customer.pan) {
-          custUpdates.pan = newLoanPan;
-        }
-        if (newLoanGovtIdNumber && !customer.govtIdNumber) {
-          custUpdates.govtIdType = newLoanGovtIdType;
-          custUpdates.govtIdNumber = newLoanGovtIdNumber;
-        }
-        if (Object.keys(custUpdates).length > 0) {
-          await db.customers.update(customer.id, custUpdates);
-        }
-      }
 
       // 2. Generate Installments
       const baseDueDate = new Date(startTimestamp);
@@ -495,7 +556,10 @@ export default function LoansPage() {
       }
 
       toast.dismiss(toastId);
-      toast.success(`Loan account ${loanNumber} disbursed successfully!`);
+      toast.success(`Loan account ${loanNumber} disbursed for ${customerNameToUse}!`);
+      setNewLoanCustomerName('');
+      setNewLoanCustomerPhone('');
+      setNewLoanCustomerId('');
       setIsCreateLoanOpen(false);
       await loadData();
     } catch (err) {
@@ -1150,17 +1214,29 @@ export default function LoansPage() {
                                 Schedule
                               </Button>
                               {loan.status !== 'completed' && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedLoan(loan);
-                                    setCollectAmount(loan.monthlyEMI.toString());
-                                    setIsCollectOpen(true);
-                                  }}
-                                  className="h-7 text-xs font-bold px-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground"
-                                >
-                                  Collect
-                                </Button>
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setReminderLoan(loan)}
+                                    className="h-7 text-xs font-bold px-2 rounded-lg border-emerald-500/30 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 gap-1"
+                                    title="Send EMI Reminder on WhatsApp"
+                                  >
+                                    <MessageCircle className="h-3.5 w-3.5" />
+                                    <span className="hidden sm:inline">WhatsApp</span>
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedLoan(loan);
+                                      setCollectAmount(loan.monthlyEMI.toString());
+                                      setIsCollectOpen(true);
+                                    }}
+                                    className="h-7 text-xs font-bold px-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground"
+                                  >
+                                    Collect
+                                  </Button>
+                                </>
                               )}
                             </div>
                           </td>
@@ -1612,22 +1688,77 @@ export default function LoansPage() {
             </DialogHeader>
 
             <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-              {/* Customer Select */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-foreground">Select Customer *</Label>
-                <Select value={newLoanCustomerId} onValueChange={handleSelectCustomerForLoan}>
-                  <SelectTrigger className="w-full h-9 rounded-xl text-xs">
-                    <SelectValue placeholder="Choose borrower customer" />
-                  </SelectTrigger>
-                  <SelectContent>
+              {/* Customer Input & Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-foreground">Customer Name *</Label>
+                    {newLoanCustomerId && (
+                      <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 py-0 px-1.5">
+                        Saved Customer
+                      </Badge>
+                    )}
+                  </div>
+                  <Input
+                    list="loan-borrowers-datalist"
+                    value={newLoanCustomerName}
+                    onChange={(e) => handleLoanCustomerNameChange(e.target.value)}
+                    placeholder="Type name (e.g. Ramesh Sharma)"
+                    className="h-9 rounded-xl text-xs font-medium"
+                    required
+                  />
+                  <datalist id="loan-borrowers-datalist">
                     {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id?.toString() || ''}>
-                        {c.name} {c.phone ? `(${c.phone})` : ''}
-                      </SelectItem>
+                      <option key={c.id} value={c.name}>
+                        {c.phone ? `${c.phone} · ` : ''}{c.city || ''}
+                      </option>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </datalist>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-foreground">Phone / WhatsApp Number</Label>
+                  <Input
+                    type="tel"
+                    value={newLoanCustomerPhone}
+                    onChange={(e) => {
+                      setNewLoanCustomerPhone(e.target.value);
+                      const cleanDigits = e.target.value.replace(/\D/g, '');
+                      if (cleanDigits.length >= 10) {
+                        const last10 = cleanDigits.slice(-10);
+                        const matched = customers.find(c => c.phone && c.phone.replace(/\D/g, '').endsWith(last10));
+                        if (matched && matched.id && (!newLoanCustomerName || newLoanCustomerName.trim().toLowerCase() === matched.name.toLowerCase())) {
+                          handleSelectCustomerForLoan(matched.id.toString());
+                        }
+                      }
+                    }}
+                    placeholder="10-digit mobile number"
+                    className="h-9 rounded-xl text-xs font-mono"
+                  />
+                </div>
               </div>
+
+              {/* Or Quick Pick from existing customers dropdown */}
+              {customers.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Or Select From Saved Customers</span>
+                    <div className="h-px bg-border/50 flex-1" />
+                  </div>
+                  <Select value={newLoanCustomerId} onValueChange={handleSelectCustomerForLoan}>
+                    <SelectTrigger className="w-full h-8 rounded-lg text-xs text-muted-foreground">
+                      <SelectValue placeholder="Choose from saved customers list..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers.map((c) => (
+                        <SelectItem key={c.id} value={c.id?.toString() || ''}>
+                          {c.name} {c.phone ? `(${c.phone})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {/* Loan Type */}
               <div className="grid grid-cols-2 gap-3">
@@ -2076,6 +2207,14 @@ export default function LoansPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* WhatsApp EMI Reminder Modal */}
+      <WhatsAppDueReminderModal
+        open={!!reminderLoan}
+        onOpenChange={(open) => !open && setReminderLoan(null)}
+        loan={reminderLoan}
+        defaultType="emi_due"
+      />
     </div>
   );
 }

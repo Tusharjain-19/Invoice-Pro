@@ -3,7 +3,8 @@
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
-import { CreditCard, CheckCircle2, Clock, X } from 'lucide-react';
+import { PAYMENT_MODE_COLORS } from '@/lib/analyticsHelper';
+import { CreditCard, CheckCircle2, Clock, X, Smartphone, Banknote, Landmark, Wallet, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
@@ -23,24 +24,41 @@ export interface PaymentModesData {
 
 interface PaymentModesBreakdownProps {
   data: PaymentModesData;
+  title?: string;
+  description?: string;
   onRemove?: () => void;
 }
 
-const MODE_COLORS: Record<string, string> = {
-  Cash: '#10b981', // green
-  UPI: '#6366f1', // indigo
-  'Bank Transfer': '#3b82f6', // blue
-  Cheque: '#f59e0b', // amber
-  Credit: '#ef4444', // red
-  Other: '#8b5cf6', // purple
+const getModeIcon = (mode: string) => {
+  switch (mode) {
+    case 'UPI':
+      return <Smartphone className="h-3.5 w-3.5 text-indigo-500" />;
+    case 'Card':
+      return <CreditCard className="h-3.5 w-3.5 text-cyan-500" />;
+    case 'Cash':
+      return <Banknote className="h-3.5 w-3.5 text-emerald-500" />;
+    case 'Bank Transfer':
+      return <Landmark className="h-3.5 w-3.5 text-blue-500" />;
+    case 'EMI':
+      return <Wallet className="h-3.5 w-3.5 text-purple-500" />;
+    case 'Credit':
+      return <ShieldAlert className="h-3.5 w-3.5 text-rose-500" />;
+    default:
+      return <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />;
+  }
 };
 
-export function PaymentModesBreakdown({ data, onRemove }: PaymentModesBreakdownProps) {
+export function PaymentModesBreakdown({
+  data,
+  title = 'Payment Modes & Collections',
+  description = 'Payment channels distribution and collection recovery efficiency',
+  onRemove,
+}: PaymentModesBreakdownProps) {
   const chartData = data.items.map(item => ({
     name: item.mode,
     value: item.amount,
     count: item.count,
-    color: MODE_COLORS[item.mode] || '#94a3b8'
+    color: PAYMENT_MODE_COLORS[item.mode] || '#94a3b8'
   }));
 
   return (
@@ -50,14 +68,14 @@ export function PaymentModesBreakdown({ data, onRemove }: PaymentModesBreakdownP
           <div className="flex items-center gap-2">
             <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
               <CreditCard className="h-4.5 w-4.5 text-primary" />
-              Payment Modes & Collections
+              {title}
             </CardTitle>
             <span className="text-[10px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">
               Cash Flow
             </span>
           </div>
           <CardDescription className="text-xs text-muted-foreground/80">
-            Payment channels distribution and collection recovery efficiency
+            {description}
           </CardDescription>
         </div>
         {onRemove && (
@@ -78,7 +96,7 @@ export function PaymentModesBreakdown({ data, onRemove }: PaymentModesBreakdownP
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">Recovered</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">Total Received</span>
               <span className="text-base font-extrabold text-foreground block mt-0.5">{formatCurrency(data.totalCollected)}</span>
             </div>
             <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
@@ -99,7 +117,7 @@ export function PaymentModesBreakdown({ data, onRemove }: PaymentModesBreakdownP
         {/* Donut Chart & Breakdown Table */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
           <div className="md:col-span-5 flex justify-center">
-            {chartData.length > 0 ? (
+            {chartData.length > 0 && data.totalCollected > 0 ? (
               <div className="relative w-40 h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -140,16 +158,19 @@ export function PaymentModesBreakdown({ data, onRemove }: PaymentModesBreakdownP
             )}
           </div>
 
-          <div className="md:col-span-7 space-y-2">
-            {data.items.slice(0, 4).map((item) => (
-              <div key={item.mode} className="flex items-center justify-between text-xs p-1.5 rounded-lg hover:bg-muted/20 transition-colors">
+          <div className="md:col-span-7 space-y-1.5 max-h-52 overflow-y-auto pr-1">
+            {data.items.map((item) => (
+              <div key={item.mode} className="flex items-center justify-between text-xs p-1.5 rounded-lg hover:bg-muted/30 transition-colors border border-transparent hover:border-border/40">
                 <div className="flex items-center gap-2">
                   <span
                     className="h-2.5 w-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: MODE_COLORS[item.mode] || '#94a3b8' }}
+                    style={{ backgroundColor: PAYMENT_MODE_COLORS[item.mode] || '#94a3b8' }}
                   />
-                  <span className="font-semibold text-foreground">{item.mode}</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">({item.count})</span>
+                  <div className="flex items-center gap-1">
+                    {getModeIcon(item.mode)}
+                    <span className="font-semibold text-foreground">{item.mode}</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground font-mono">({item.count} bills)</span>
                 </div>
                 <div className="text-right">
                   <span className="font-bold text-foreground font-mono">{formatCurrency(item.amount)}</span>

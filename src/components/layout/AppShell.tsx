@@ -15,9 +15,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { settings } = useSettingsStore();
   const { setGlobalSearchOpen } = useAppStore();
 
-  // Initialize theme on mount
+  // Initialize theme on mount and settings changes
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', settings.theme === 'dark');
+    const root = document.documentElement;
+    const theme = settings.theme || 'light';
+
+    if (theme === 'system') {
+      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.classList.toggle('dark', systemDark);
+      root.classList.remove('theme-midnight');
+    } else if (theme === 'midnight') {
+      root.classList.add('dark', 'theme-midnight');
+    } else if (theme === 'dark') {
+      root.classList.add('dark');
+      root.classList.remove('theme-midnight');
+    } else {
+      root.classList.remove('dark', 'theme-midnight');
+    }
   }, [settings.theme]);
 
   // Seed database defaults

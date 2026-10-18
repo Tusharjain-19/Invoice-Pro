@@ -10,6 +10,7 @@ export const INVOICE_TYPES = {
   QUOTATION: 'quotation',
   PROFORMA: 'proforma',
   PURCHASE_INVOICE: 'purchase_invoice',
+  PURCHASE_ORDER: 'purchase_order',
   DELIVERY_CHALLAN: 'delivery_challan',
   CREDIT_NOTE: 'credit_note',
   DEBIT_NOTE: 'debit_note',
@@ -23,6 +24,7 @@ export const INVOICE_PREFIXES: Record<InvoiceType, string> = {
   quotation: 'QUO',
   proforma: 'PRO',
   purchase_invoice: 'PUR',
+  purchase_order: 'PO',
   delivery_challan: 'DC',
   credit_note: 'CN',
   debit_note: 'DN',
@@ -34,6 +36,7 @@ export const INVOICE_TYPE_LABELS: Record<InvoiceType, string> = {
   quotation: 'Quotation',
   proforma: 'Proforma Invoice',
   purchase_invoice: 'Purchase Invoice',
+  purchase_order: 'Purchase Order (PO)',
   delivery_challan: 'Delivery Challan',
   credit_note: 'Credit Note',
   debit_note: 'Debit Note',
@@ -118,6 +121,7 @@ export interface Customer {
   aadhaarNumber?: string;
   govtIdType?: string;
   govtIdNumber?: string;
+  loyaltyPoints?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -148,6 +152,9 @@ export interface Invoice {
   customerGstin: string;
   customerState: string;
   customerPhone: string;
+  customerEmail?: string;
+  customerCity?: string;
+  customerPincode?: string;
   supplierId: number | null;
   supplierName: string;
   supplierAddress: string;
@@ -167,6 +174,10 @@ export interface Invoice {
   balanceDue: number;
   status: InvoiceStatus;
   paymentMode: string;
+  isSplitPayment?: boolean;
+  paymentSplits?: Record<string, number>;
+  appliedCouponCode?: string;
+  couponDiscountAmount?: number;
   isReverseCharge: boolean;
   isTaxInclusive: boolean;
   notes: string;
@@ -221,7 +232,7 @@ export interface StockLog {
   previousStock: number;
   newStock: number;
   reference: string;
-  referenceType: 'invoice' | 'purchase' | 'manual' | 'import';
+  referenceType: 'invoice' | 'purchase' | 'manual' | 'import' | 'purchase_invoice';
   date: number;
 }
 
@@ -287,8 +298,15 @@ export interface AppSettings {
   sigWidth?: number;
   showLogo?: boolean;
   showSignature?: boolean;
+  // Loyalty Program
+  loyaltyProgramEnabled?: boolean;
+  loyaltyPointsPer100?: number; // default 1 pt per ₹100
+  loyaltyPointRedeemValue?: number; // default ₹1 per pt
+  // Role & Cashier Mode Lock
+  staffPin?: string;
+  isCashierLockEnabled?: boolean;
   // Theme
-  theme: 'light' | 'dark';
+  theme: 'light' | 'dark' | 'midnight' | 'system';
 }
 
 // ---------- Utility Types ----------
@@ -418,5 +436,21 @@ export interface LoanPayment {
   referenceNumber?: string;
   receivedBy?: string;
   notes?: string;
+}
+
+export interface Coupon {
+  id?: number;
+  code: string;
+  description?: string;
+  discountType: 'percentage' | 'amount';
+  discountValue: number;
+  minOrderValue: number;
+  maxDiscount?: number;
+  expiryDate: number;
+  usageLimit?: number;
+  timesUsed: number;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 

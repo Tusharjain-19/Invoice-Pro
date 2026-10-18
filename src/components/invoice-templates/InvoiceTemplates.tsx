@@ -220,7 +220,7 @@ export function InvoiceTemplateAmazonLike({ invoice, settings }: TemplateProps) 
                 </tr>
                 {invoice.discount > 0 && (
                   <tr>
-                    <td className="py-2 text-slate-500">Discount:</td>
+                    <td className="py-2 text-slate-500">Discount{invoice.appliedCouponCode ? ` (${invoice.appliedCouponCode})` : ''}:</td>
                     <td className="py-2 text-right font-mono text-destructive">-{formatCurrency(invoice.discount)}</td>
                   </tr>
                 )}
@@ -468,7 +468,7 @@ export function InvoiceTemplateLTIMindtreeLike({ invoice, settings }: TemplatePr
                 </tr>
                 {invoice.discount > 0 && (
                   <tr className="text-slate-600">
-                     <td className="py-1">Discount:</td>
+                     <td className="py-1">Discount{invoice.appliedCouponCode ? ` (${invoice.appliedCouponCode})` : ''}:</td>
                      <td className="py-1 text-right font-mono text-destructive">-{formatCurrency(invoice.discount)}</td>
                   </tr>
                 )}
@@ -726,7 +726,7 @@ export function InvoiceTemplateUnileverLike({ invoice, settings }: TemplateProps
                 </tr>
                 {invoice.discount > 0 && (
                   <tr>
-                    <td className="py-1 text-slate-500">Total Discount:</td>
+                    <td className="py-1 text-slate-500">Discount{invoice.appliedCouponCode ? ` (${invoice.appliedCouponCode})` : ''}:</td>
                     <td className="py-1 font-mono text-destructive">-{formatCurrency(invoice.discount)}</td>
                   </tr>
                 )}
@@ -930,7 +930,7 @@ export function InvoiceTemplateITCLike({ invoice, settings }: TemplateProps) {
                 </tr>
                 {invoice.discount > 0 && (
                   <tr>
-                    <td className="py-1 text-slate-500">Discount:</td>
+                    <td className="py-1 text-slate-500">Discount{invoice.appliedCouponCode ? ` (${invoice.appliedCouponCode})` : ''}:</td>
                     <td className="py-1 text-right font-mono text-destructive">-{formatCurrency(invoice.discount)}</td>
                   </tr>
                 )}
@@ -1101,7 +1101,7 @@ export function InvoiceTemplateBigBazaarLike({ invoice, settings }: TemplateProp
                 </tr>
                 {invoice.discount > 0 && (
                   <tr>
-                    <td className="py-1.5 text-slate-500">Promo Discount:</td>
+                    <td className="py-1.5 text-slate-500">Discount{invoice.appliedCouponCode ? ` (${invoice.appliedCouponCode})` : ''}:</td>
                     <td className="py-1.5 text-right font-mono text-destructive">-{formatCurrency(invoice.discount)}</td>
                   </tr>
                 )}
@@ -1327,7 +1327,7 @@ export function InvoiceTemplatePremiumDefault({ invoice, settings }: TemplatePro
                 </tr>
                 {invoice.discount > 0 && (
                   <tr className="text-slate-500">
-                    <td className="py-1">Discount applied:</td>
+                    <td className="py-1">Discount{invoice.appliedCouponCode ? ` (${invoice.appliedCouponCode})` : ''}:</td>
                     <td className="py-1 text-right font-mono text-destructive">-{formatCurrency(invoice.discount)}</td>
                   </tr>
                 )}

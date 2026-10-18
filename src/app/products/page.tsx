@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import Link from 'next/link';
 import { db } from '@/db';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { Product } from '@/types';
@@ -16,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import {
-  Package, Plus, Search, Upload, Download, Edit, Trash2, AlertTriangle, Filter, X, MoreHorizontal,
+  Package, Plus, Search, Upload, Download, Edit, Trash2, AlertTriangle, Filter, X, MoreHorizontal, Barcode,
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import * as XLSX from 'xlsx';
@@ -259,7 +260,12 @@ export default function ProductsPage() {
           <h2 className="text-2xl font-bold tracking-tight">Products</h2>
           <p className="text-muted-foreground text-sm">{products.length} products · {lowStockCount > 0 && <span className="text-destructive font-medium">{lowStockCount} low stock</span>}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/products/barcodes">
+            <Button variant="outline" size="sm" className="font-semibold gap-1.5 border-primary/30 text-primary hover:bg-primary/5">
+              <Barcode className="h-4 w-4" /> Barcode Stickers
+            </Button>
+          </Link>
           <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImport} />
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
             <Upload className="h-4 w-4 mr-1.5" /> Import

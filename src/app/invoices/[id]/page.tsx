@@ -25,11 +25,12 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import {
-  ArrowLeft, Printer, Download, Share2, Mail, Send, ChevronRight, Edit3, Settings2, FileText, Check, Ban, AlertTriangle, Loader2
+  ArrowLeft, Printer, Download, Share2, Mail, Send, ChevronRight, Edit3, Settings2, FileText, Check, Ban, AlertTriangle, Loader2, FileCode, PackageCheck, Building2
 } from 'lucide-react';
 import { PdfDocumentIcon } from '@/components/shared/PdfDocumentIcon';
 import { toast } from 'sonner';
 import type { Invoice, AppSettings } from '@/types';
+import { generateEWayBillJSON, generateEInvoiceJSON, downloadJsonFile } from '@/lib/gstCompliance';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -158,12 +159,17 @@ export default function InvoiceDetailPage({ params }: PageProps) {
 
       if (method === 'whatsapp') {
         const message = `Hello, please find details for Invoice ${invoice.invoiceNumber} from ${settings.companyName}.\nTotal Amount: ${formatCurrency(invoice.totalAmount)}.\nBalance Due: ${formatCurrency(invoice.balanceDue)}.\n\nNote: The PDF bill has been downloaded to your device. Please attach it here.`;
-        const waUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+        const rawDigits = (invoice.customerPhone || '').replace(/\D/g, '');
+        const targetPhone = rawDigits.length === 10 ? `91${rawDigits}` : rawDigits;
+        const waUrl = targetPhone
+          ? `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`
+          : `https://wa.me/?text=${encodeURIComponent(message)}`;
         window.open(waUrl, '_blank');
       } else {
+        const emailTo = invoice.customerEmail || '';
         const subject = `Invoice ${invoice.invoiceNumber} - ${settings.companyName}`;
         const body = `Hello ${invoice.customerName},\n\nPlease find the billing details for Invoice ${invoice.invoiceNumber}.\n\nTotal Amount: ${formatCurrency(invoice.totalAmount)}\nBalance Due: ${formatCurrency(invoice.balanceDue)}\nPayment Mode: ${invoice.paymentMode}\n\nNote: The PDF bill has been downloaded to your device. Please attach the file to this email.\n\nThank you for your business!\n\nBest regards,\n${settings.companyName}`;
-        window.location.href = `mailto:${invoice.customerPhone ? '' : ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.location.href = `mailto:${emailTo}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       }
     } catch (err) {
       console.error('Failed to share PDF:', err);
@@ -262,6 +268,84 @@ export default function InvoiceDetailPage({ params }: PageProps) {
       toast.error('Failed to cancel invoice', { id: 'cancel-op' });
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  // Convert PO directly to Purchase Invoice & Stock Up
+  const handleConvertToPurchaseInvoice = async () => {
+    if (!invoice) return;
+    try {
+      const now = Date.now();
+      await db.invoices.update(invoice.id!, {
+        invoiceType: 'purchase_invoice',
+        notes: (invoice.notes ? invoice.notes + ' | ' : '') + `Converted from PO on ${new Date(now).toLocaleDateString()}`,
+        updatedAt: now,
+      });
+
+      let stockedCount = 0;
+      for (const item of invoice.items || []) {
+        let prod = null;
+        if (item.productId) {
+          prod = await db.products.get(item.productId);
+        }
+        if (!prod && item.description) {
+          prod = await db.products.where('name').equals(item.description).first();
+        }
+
+        if (prod && prod.id) {
+          const prevStock = prod.currentStock;
+          const newStock = prevStock + (item.quantity || 1);
+          await db.products.update(prod.id, {
+            currentStock: newStock,
+            updatedAt: now,
+          });
+          await db.stockLogs.add({
+            productId: prod.id,
+            productName: prod.name,
+            type: 'in',
+            quantity: item.quantity || 1,
+            previousStock: prevStock,
+            newStock,
+            reference: invoice.invoiceNumber,
+            referenceType: 'purchase_invoice',
+            date: now,
+          });
+          stockedCount++;
+        }
+      }
+
+      toast.success(
+        `Purchase Order converted to Purchase Invoice! ${stockedCount} product items stocked up into inventory.`
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to convert Purchase Order to stock');
+    }
+  };
+
+  // Export official E-Way Bill JSON
+  const handleExportEWayBill = () => {
+    if (!invoice) return;
+    try {
+      const payload = generateEWayBillJSON(invoice, settings);
+      downloadJsonFile(payload, `EWayBill_${invoice.invoiceNumber}.json`);
+      toast.success('Official E-Way Bill JSON downloaded ready for ewaybillgst.gov.in');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to generate E-Way Bill JSON');
+    }
+  };
+
+  // Export official E-Invoice IRN JSON
+  const handleExportEInvoice = () => {
+    if (!invoice) return;
+    try {
+      const payload = generateEInvoiceJSON(invoice, settings);
+      downloadJsonFile(payload, `EInvoice_IRN_${invoice.invoiceNumber}.json`);
+      toast.success('Official E-Invoice (IRN) JSON downloaded ready for einvoice1.gst.gov.in');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to generate E-Invoice JSON');
     }
   };
 
@@ -364,6 +448,62 @@ export default function InvoiceDetailPage({ params }: PageProps) {
                     </Button>
                   }
                 />
+              </div>
+
+              {/* Purchase Order (PO) to Stock Conversion Shortcut */}
+              {invoice.invoiceType === 'purchase_order' && (
+                <div className="p-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                    <PackageCheck className="h-4 w-4" /> Purchase Order (PO)
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-normal">
+                    When supplier goods arrive, convert this PO directly to a Purchase Invoice to increment inventory stock.
+                  </p>
+                  <Button
+                    onClick={handleConvertToPurchaseInvoice}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 text-xs h-9 rounded-xl shadow-xs"
+                  >
+                    <PackageCheck className="h-4 w-4" /> Convert to Purchase Bill & Stock Up
+                  </Button>
+                </div>
+              )}
+
+              {/* Government Compliance: Official E-Way Bill & E-Invoice JSON */}
+              <div className="pt-2 border-t space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-primary" /> Govt GST Compliance
+                  </h4>
+                  {invoice.totalAmount >= 50000 && (
+                    <span className="text-[9px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                      Mandatory &gt; ₹50k
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Button
+                    variant="outline"
+                    onClick={handleExportEWayBill}
+                    className="w-full flex items-center justify-between text-xs font-semibold h-8 border-primary/30 text-primary hover:bg-primary/5 rounded-lg px-2.5"
+                    title="Official JSON export for ewaybillgst.gov.in"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FileCode className="h-3.5 w-3.5" /> Export E-Way Bill JSON
+                    </span>
+                    <span className="text-[9px] font-mono text-muted-foreground font-bold">NIC Portal</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleExportEInvoice}
+                    className="w-full flex items-center justify-between text-xs font-semibold h-8 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/5 rounded-lg px-2.5"
+                    title="Official JSON export for einvoice1.gst.gov.in"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FileCode className="h-3.5 w-3.5" /> Export E-Invoice (IRN) JSON
+                    </span>
+                    <span className="text-[9px] font-mono text-muted-foreground font-bold">B2B Portal</span>
+                  </Button>
+                </div>
               </div>
 
               {/* Cancellation Action or Banner */}

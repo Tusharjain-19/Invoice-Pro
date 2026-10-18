@@ -23,6 +23,11 @@ import {
   Wallet,
   Percent,
   Truck,
+  AlertTriangle,
+  CalendarClock,
+  ShoppingCart,
+  MessageCircle,
+  CheckCircle,
 } from 'lucide-react';
 import { InvoiceProMark } from './Logo';
 import {
@@ -54,34 +59,28 @@ export function Header() {
   const { setSidebarOpen, setGlobalSearchOpen } = useAppStore();
   const { settings } = useSettingsStore();
 
-  const lowStockCount = useLiveQuery(async () => {
-    return await db.products.filter(p => p.isActive && p.currentStock <= p.minimumStock).count();
-  }) ?? 0;
+  const lowStockProducts = useLiveQuery(async () => {
+    return await db.products.filter(p => Boolean(p.isActive && p.currentStock <= p.minimumStock)).toArray();
+  }) ?? [];
 
-  const overdueCount = useLiveQuery(async () => {
+  const nearExpiryProducts = useLiveQuery(async () => {
     const now = Date.now();
-    return await db.invoices.filter(inv => inv.status !== 'paid' && inv.dueDate !== null && inv.dueDate < now).count();
-  }) ?? 0;
+    const thirtyDays = now + 30 * 86400000;
+    return await db.products.filter(p => {
+      if (!p.isActive || !p.expiryDate) return false;
+      const expTime = new Date(p.expiryDate).getTime();
+      return !isNaN(expTime) && expTime > now && expTime <= thirtyDays;
+    }).toArray();
+  }) ?? [];
 
-  const notifications = [];
-  if (lowStockCount > 0) {
-    notifications.push({
-      id: 'low-stock',
-      title: 'Low Stock Alert',
-      desc: `${lowStockCount} ${lowStockCount === 1 ? 'product is' : 'products are'} running low in stock.`,
-      time: 'Live',
-      read: false,
-    });
-  }
-  if (overdueCount > 0) {
-    notifications.push({
-      id: 'overdue',
-      title: 'Overdue Invoices',
-      desc: `${overdueCount} ${overdueCount === 1 ? 'invoice is' : 'invoices are'} currently overdue.`,
-      time: 'Live',
-      read: false,
-    });
-  }
+  const overdueInvoices = useLiveQuery(async () => {
+    const now = Date.now();
+    return await db.invoices.filter(inv => inv.status !== 'paid' && inv.dueDate !== null && inv.dueDate < now).toArray();
+  }) ?? [];
+
+  const suppliers = useLiveQuery(() => db.suppliers.toArray()) ?? [];
+
+  const totalAlertsCount = lowStockProducts.length + nearExpiryProducts.length + overdueInvoices.length;
 
   const pageTitle = Object.entries(PAGE_TITLES).reduce((title, [path, name]) => {
     if (path === '/' && pathname === '/') return name;
@@ -118,7 +117,7 @@ export function Header() {
       };
     });
 
-  const unreadNotificationsCount = notifications.filter(n => !n.read).length;
+  const unreadNotificationsCount = totalAlertsCount;
 
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border bg-card/90 backdrop-blur-md px-6">
@@ -147,7 +146,8 @@ export function Header() {
               </React.Fragment>
             ))}
           </div>
-          <div className="flex items-center gap-3 mt-0.5">
+          <div className="flex items-center gap-2.5 mt-0.5">
+            <InvoiceProMark size={24} className="shrink-0 drop-shadow-xs" />
             <h1 className="text-xl font-bold tracking-tight truncate text-foreground">{pageTitle}</h1>
             <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px] font-medium py-0.5 px-2.5 rounded-lg">
               <Calendar className="h-3 w-3 mr-1 shrink-0" />
@@ -324,38 +324,167 @@ export function Header() {
               <Bell className="h-4 w-4 text-muted-foreground hover:text-foreground" />
               {unreadNotificationsCount > 0 && (
                 <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
                 </span>
               )}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80 rounded-xl p-2 shadow-2xl border border-border/50 bg-card">
-            <div className="flex items-center justify-between px-2 py-1.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notifications</span>
+          <DropdownMenuContent align="end" className="w-88 rounded-2xl p-2.5 shadow-2xl border border-border/60 bg-popover/95 backdrop-blur-xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/40">
+              <div className="flex items-center gap-1.5">
+                <Bell className="h-4 w-4 text-primary" />
+                <span className="text-xs font-bold uppercase tracking-wider text-foreground">Alerts & Re-orders</span>
+              </div>
               {unreadNotificationsCount > 0 && (
-                <span className="text-[10px] bg-red-50 text-red-500 dark:bg-red-950/30 dark:text-red-400 font-bold px-1.5 py-0.5 rounded-md">{unreadNotificationsCount} New</span>
+                <Badge variant="destructive" className="text-[10px] font-bold px-1.5 py-0">
+                  {unreadNotificationsCount} Active
+                </Badge>
               )}
             </div>
-            <DropdownMenuSeparator className="my-1.5 border-border/40" />
-            <div className="space-y-1">
-              {notifications.length === 0 ? (
-                <div className="p-6 text-center text-xs text-muted-foreground">
-                  No new alerts or notifications.
-                </div>
-              ) : (
-                notifications.map((n) => (
-                  <DropdownMenuItem key={n.id} asChild className="flex flex-col items-start gap-1 p-2 rounded-lg cursor-pointer hover:bg-muted/40 transition-colors">
-                    <Link href={n.id === 'low-stock' ? '/products' : '/invoices'} className="w-full">
-                      <div className="flex items-center gap-2 w-full">
-                        <span className="font-semibold text-xs text-foreground">{n.title}</span>
-                        <span className="text-[9px] text-muted-foreground ml-auto">{n.time}</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground leading-normal">{n.desc}</p>
-                    </Link>
-                  </DropdownMenuItem>
-                ))
-              )}
-            </div>
+
+            {totalAlertsCount === 0 ? (
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                <CheckCircle className="h-8 w-8 mx-auto mb-2 text-emerald-500 opacity-60" />
+                <p className="font-semibold text-foreground">All Systems Healthy</p>
+                <p className="text-[11px] mt-0.5">No low stock items, expiring batches, or overdue bills.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 py-2">
+                {/* Low Stock Alerts */}
+                {lowStockProducts.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between px-2 text-[10px] font-black uppercase tracking-wider text-rose-500">
+                      <span className="flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" /> Low Stock ({lowStockProducts.length})
+                      </span>
+                      <Link href="/products?filter=low-stock" className="hover:underline text-[9px] lowercase font-normal text-muted-foreground">
+                        view all
+                      </Link>
+                    </div>
+
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      {lowStockProducts.slice(0, 5).map(prod => {
+                        const defaultSupplier = suppliers[0];
+                        const supplierPhone = defaultSupplier?.phone?.replace(/\D/g, '') || '';
+                        const waMsg = encodeURIComponent(
+                          `Hello ${defaultSupplier?.name || 'Vendor'}, please send fresh stock for:\nProduct: ${prod.name} (SKU: ${prod.sku || 'N/A'})\nRe-order Qty: ${Math.max(10, (prod.minimumStock || 5) * 2)}\nStore: ${settings.companyName || 'InvoicePro'}`
+                        );
+
+                        return (
+                          <div
+                            key={prod.id}
+                            className="p-2 rounded-xl bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/15 flex items-center justify-between gap-2 text-xs transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-foreground text-xs truncate">{prod.name}</p>
+                              <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground mt-0.5">
+                                <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                                  {prod.currentStock} {prod.unit || 'pcs'} left
+                                </span>
+                                <span>(Min: {prod.minimumStock})</span>
+                              </div>
+                            </div>
+
+                            {/* 1-Click Re-order Shortcut */}
+                            {supplierPhone ? (
+                              <a
+                                href={`https://wa.me/${supplierPhone.length === 10 ? '91' + supplierPhone : supplierPhone}?text=${waMsg}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs shrink-0 transition-colors"
+                                title="Re-order instantly via WhatsApp to Vendor"
+                              >
+                                <MessageCircle className="h-3 w-3" /> Re-order
+                              </a>
+                            ) : (
+                              <Link
+                                href={`/invoices/create?type=purchase_invoice&productId=${prod.id}&productName=${encodeURIComponent(prod.name)}`}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-2xs shrink-0 transition-colors"
+                                title="Create Purchase Bill"
+                              >
+                                <ShoppingCart className="h-3 w-3" /> Re-order
+                              </Link>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Expiry Alerts (within 30 days) */}
+                {nearExpiryProducts.length > 0 && (
+                  <div className="space-y-1.5 border-t border-border/40 pt-2">
+                    <div className="flex items-center justify-between px-2 text-[10px] font-black uppercase tracking-wider text-amber-500">
+                      <span className="flex items-center gap-1">
+                        <CalendarClock className="h-3 w-3" /> Expiry Warning ({nearExpiryProducts.length})
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 max-h-36 overflow-y-auto">
+                      {nearExpiryProducts.slice(0, 4).map(prod => {
+                        const now = Date.now();
+                        const daysLeft = prod.expiryDate ? Math.max(0, Math.ceil((new Date(prod.expiryDate).getTime() - now) / 86400000)) : 0;
+
+                        return (
+                          <div
+                            key={prod.id}
+                            className="p-2 rounded-xl bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/15 flex items-center justify-between gap-2 text-xs transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-foreground text-xs truncate">{prod.name}</p>
+                              <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground mt-0.5">
+                                {prod.batchNumber && <span>Batch: {prod.batchNumber}</span>}
+                                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                  Expires in {daysLeft} {daysLeft === 1 ? 'day' : 'days'}
+                                </span>
+                              </div>
+                            </div>
+                            <Badge variant="outline" className="border-amber-500/30 text-amber-600 text-[10px] font-bold shrink-0">
+                              {daysLeft}d left
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Overdue Invoices */}
+                {overdueInvoices.length > 0 && (
+                  <div className="space-y-1.5 border-t border-border/40 pt-2">
+                    <div className="flex items-center justify-between px-2 text-[10px] font-black uppercase tracking-wider text-purple-500">
+                      <span>Overdue Invoices ({overdueInvoices.length})</span>
+                      <Link href="/invoices" className="hover:underline text-[9px] lowercase font-normal text-muted-foreground">
+                        view all
+                      </Link>
+                    </div>
+
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {overdueInvoices.slice(0, 3).map(inv => (
+                        <Link
+                          key={inv.id}
+                          href={`/invoices`}
+                          className="p-2 rounded-xl bg-muted/40 hover:bg-muted/70 flex items-center justify-between gap-2 text-xs transition-colors block"
+                        >
+                          <div>
+                            <p className="font-bold text-foreground text-xs">{inv.invoiceNumber}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">{inv.customerName}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-bold font-mono text-destructive block">
+                              ₹{inv.balanceDue.toFixed(2)}
+                            </span>
+                            <span className="text-[9px] text-muted-foreground">Pending</span>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 

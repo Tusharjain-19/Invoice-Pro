@@ -20,9 +20,11 @@ import {
   Sun,
   Moon,
   Percent,
+  Ticket,
   PanelLeftClose,
   PanelLeftOpen,
   X,
+  Zap,
 } from 'lucide-react';
 
 interface NavItem {
@@ -33,10 +35,12 @@ interface NavItem {
 
 const mainNavItems: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { label: 'POS Counter', href: '/pos', icon: Zap },
   { label: 'Products', href: '/products', icon: Package },
   { label: 'Customers', href: '/customers', icon: Users },
   { label: 'Suppliers', href: '/suppliers', icon: Truck },
   { label: 'Invoices', href: '/invoices', icon: FileText },
+  { label: 'Coupons & Offers', href: '/coupons', icon: Ticket },
   { label: 'Loans & EMI', href: '/loans', icon: Percent },
   { label: 'Expenses', href: '/expenses', icon: Wallet },
   { label: 'Reports', href: '/reports', icon: BarChart3 },
@@ -49,9 +53,9 @@ export function Sidebar() {
   const { settings, setSettings } = useSettingsStore();
 
   const toggleTheme = () => {
-    const newTheme = settings.theme === 'dark' ? 'light' : 'dark';
+    const isDark = document.documentElement.classList.contains('dark');
+    const newTheme = isDark ? 'light' : 'dark';
     setSettings({ theme: newTheme });
-    document.documentElement.classList.toggle('dark', newTheme === 'dark');
   };
 
   const handleCloseInside = () => {
@@ -152,13 +156,8 @@ export function Sidebar() {
 
         {/* Footer Section */}
         <div className="mt-auto p-3 shrink-0 border-t border-border/50 space-y-2 bg-muted/20">
-          {/* Version & Theme Toggle Row */}
-          <div className={cn("flex items-center px-1.5", sidebarCollapsed ? "justify-center" : "justify-between")}>
-            {!sidebarCollapsed && (
-              <span className="text-[10px] text-muted-foreground/70 font-bold tracking-wider uppercase font-mono">
-                v1.2.0 • PRO
-              </span>
-            )}
+          {/* Theme Toggle Row */}
+          <div className={cn("flex items-center px-1.5", sidebarCollapsed ? "justify-center" : "justify-end")}>
             <Button
               variant="ghost"
               size="icon"

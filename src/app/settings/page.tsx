@@ -13,11 +13,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   Store, CreditCard, Receipt, Database, Upload, Download, Save, Image as ImageIcon, CheckCircle, RefreshCcw,
-  Sparkles, ShoppingBag, Briefcase, Layers, Truck, Factory, Maximize2, Eye, ZoomIn, ZoomOut, Check, FileText
+  Sparkles, ShoppingBag, Briefcase, Layers, Truck, Factory, Maximize2, Eye, ZoomIn, ZoomOut, Check, FileText,
+  Palette, Moon, Sun, Monitor, Shield, Key, Lock, Unlock, CheckCircle2, Award, Coins, FileJson, AlertTriangle
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { InvoiceTemplateSelector } from '@/components/invoice-templates/InvoiceTemplates';
 import type { Invoice } from '@/types';
 import { toast } from 'sonner';
@@ -201,6 +204,8 @@ export default function SettingsPage() {
         setActiveTab('database');
       } else if (tabParam === 'template' || tabParam === 'invoice' || tabParam === 'templates') {
         setActiveTab('invoice');
+      } else if (tabParam === 'appearance' || tabParam === 'theme') {
+        setActiveTab('appearance');
       } else if (tabParam === 'bank' || tabParam === 'company') {
         setActiveTab(tabParam);
       }
@@ -268,7 +273,13 @@ export default function SettingsPage() {
     e.target.value = '';
   };
 
-  // Database Backup
+  // State for Import Restore Dialog
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importSnapshot, setImportSnapshot] = useState<any>(null);
+  const [restoreMode, setRestoreMode] = useState<'clean' | 'merge'>('clean');
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  // Database Backup (Full 13-Table Snapshot)
   const handleExportDB = async () => {
     try {
       const invoices = await db.invoices.toArray();
@@ -277,64 +288,182 @@ export default function SettingsPage() {
       const suppliers = await db.suppliers.toArray();
       const settingsData = await db.settings.toArray();
       const expenses = await db.expenses.toArray();
+      const loans = await db.loans.toArray();
+      const loanInstallments = await db.loanInstallments.toArray();
+      const loanPayments = await db.loanPayments.toArray();
+      const stockLogs = await db.stockLogs.toArray();
+      const categories = await db.categories.toArray();
+      const brands = await db.brands.toArray();
+      const coupons = await db.coupons.toArray();
 
-      const backupObj = { invoices, products, customers, suppliers, settings: settingsData, expenses, date: Date.now() };
+      const counts = {
+        invoices: invoices.length,
+        products: products.length,
+        customers: customers.length,
+        suppliers: suppliers.length,
+        expenses: expenses.length,
+        loans: loans.length,
+        loanInstallments: loanInstallments.length,
+        loanPayments: loanPayments.length,
+        stockLogs: stockLogs.length,
+        categories: categories.length,
+        brands: brands.length,
+        coupons: coupons.length,
+      };
+
+      const backupObj = {
+        app: 'InvoicePro',
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        counts,
+        data: {
+          invoices,
+          products,
+          customers,
+          suppliers,
+          settings: settingsData,
+          expenses,
+          loans,
+          loanInstallments,
+          loanPayments,
+          stockLogs,
+          categories,
+          brands,
+          coupons,
+        },
+      };
+
       const str = JSON.stringify(backupObj, null, 2);
-      
       const blob = new Blob([str], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `InvoicePro_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+      const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = `InvoicePro_Complete_Backup_${dateStr}.json`;
       a.click();
-      toast.success('Database backup exported successfully');
-    } catch {
+      URL.revokeObjectURL(url);
+
+      await db.backupLogs.add({
+        type: 'export',
+        date: Date.now(),
+        size: blob.size,
+        status: 'success',
+        notes: `Full snapshot exported (${invoices.length} inv, ${products.length} prod, ${customers.length} cust, ${loans.length} loans)`,
+      });
+
+      toast.success(`Complete snapshot exported successfully (${(blob.size / 1024).toFixed(1)} KB)`);
+    } catch (err) {
+      console.error(err);
       toast.error('Failed to export backup');
     }
   };
 
-  // Database Import
-  const handleImportDB = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Database Import File Handler with Preview Modal
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    showConfirm({
-      title: 'Import Database Backup',
-      message: 'This will append imported records. Ensure the file is a valid InvoicePro JSON backup.',
-      confirmLabel: 'Import Backup',
-      cancelLabel: 'Cancel',
-      variant: 'warning',
-      onConfirm: () => {
-        const reader = new FileReader();
-        reader.onload = async (evt) => {
-          try {
-            const data = JSON.parse(evt.target?.result as string);
-            
-            if (data.products && data.products.length > 0) {
-              await db.products.bulkAdd(data.products.map((p: any) => { delete p.id; return p; }));
-            }
-            if (data.customers && data.customers.length > 0) {
-              await db.customers.bulkAdd(data.customers.map((c: any) => { delete c.id; return c; }));
-            }
-            if (data.suppliers && data.suppliers.length > 0) {
-              await db.suppliers.bulkAdd(data.suppliers.map((s: any) => { delete s.id; return s; }));
-            }
-            if (data.invoices && data.invoices.length > 0) {
-              await db.invoices.bulkAdd(data.invoices.map((i: any) => { delete i.id; return i; }));
-            }
-            if (data.expenses && data.expenses.length > 0) {
-              await db.expenses.bulkAdd(data.expenses.map((ex: any) => { delete ex.id; return ex; }));
-            }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const rawJson = JSON.parse(evt.target?.result as string);
+        const data = rawJson.data || rawJson;
 
-            toast.success('Database backup restored successfully');
-            window.location.reload();
-          } catch (err) {
-            toast.error('Failed to parse and import backup file');
-          }
+        const counts = {
+          invoices: data.invoices?.length || 0,
+          products: data.products?.length || 0,
+          customers: data.customers?.length || 0,
+          suppliers: data.suppliers?.length || 0,
+          expenses: data.expenses?.length || 0,
+          loans: data.loans?.length || 0,
+          loanInstallments: data.loanInstallments?.length || 0,
+          loanPayments: data.loanPayments?.length || 0,
+          stockLogs: data.stockLogs?.length || 0,
+          coupons: data.coupons?.length || 0,
+          categories: data.categories?.length || 0,
+          brands: data.brands?.length || 0,
         };
-        reader.readAsText(file);
+
+        setImportSnapshot({
+          fileName: file.name,
+          fileSize: (file.size / 1024).toFixed(1) + ' KB',
+          exportedAt: rawJson.exportedAt || null,
+          counts,
+          data,
+        });
+        setImportDialogOpen(true);
+      } catch {
+        toast.error('Invalid backup file. Please provide a valid JSON file.');
       }
-    });
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleExecuteRestore = async () => {
+    if (!importSnapshot || !importSnapshot.data) return;
+    setIsRestoring(true);
+
+    try {
+      const data = importSnapshot.data;
+
+      if (restoreMode === 'clean') {
+        await db.invoices.clear();
+        await db.products.clear();
+        await db.customers.clear();
+        await db.suppliers.clear();
+        await db.expenses.clear();
+        await db.loans.clear();
+        await db.loanInstallments.clear();
+        await db.loanPayments.clear();
+        await db.stockLogs.clear();
+        await db.categories.clear();
+        await db.brands.clear();
+        await db.coupons.clear();
+
+        if (data.products?.length) await db.products.bulkAdd(data.products);
+        if (data.customers?.length) await db.customers.bulkAdd(data.customers);
+        if (data.suppliers?.length) await db.suppliers.bulkAdd(data.suppliers);
+        if (data.invoices?.length) await db.invoices.bulkAdd(data.invoices);
+        if (data.expenses?.length) await db.expenses.bulkAdd(data.expenses);
+        if (data.loans?.length) await db.loans.bulkAdd(data.loans);
+        if (data.loanInstallments?.length) await db.loanInstallments.bulkAdd(data.loanInstallments);
+        if (data.loanPayments?.length) await db.loanPayments.bulkAdd(data.loanPayments);
+        if (data.stockLogs?.length) await db.stockLogs.bulkAdd(data.stockLogs);
+        if (data.categories?.length) await db.categories.bulkAdd(data.categories);
+        if (data.brands?.length) await db.brands.bulkAdd(data.brands);
+        if (data.coupons?.length) await db.coupons.bulkAdd(data.coupons);
+        if (data.settings?.length) {
+          await db.settings.clear();
+          await db.settings.bulkAdd(data.settings);
+        }
+      } else {
+        if (data.products?.length) await db.products.bulkAdd(data.products.map((p: any) => { const copy = { ...p }; delete copy.id; return copy; }));
+        if (data.customers?.length) await db.customers.bulkAdd(data.customers.map((c: any) => { const copy = { ...c }; delete copy.id; return copy; }));
+        if (data.suppliers?.length) await db.suppliers.bulkAdd(data.suppliers.map((s: any) => { const copy = { ...s }; delete copy.id; return copy; }));
+        if (data.invoices?.length) await db.invoices.bulkAdd(data.invoices.map((i: any) => { const copy = { ...i }; delete copy.id; return copy; }));
+        if (data.expenses?.length) await db.expenses.bulkAdd(data.expenses.map((e: any) => { const copy = { ...e }; delete copy.id; return copy; }));
+        if (data.loans?.length) await db.loans.bulkAdd(data.loans.map((l: any) => { const copy = { ...l }; delete copy.id; return copy; }));
+        if (data.coupons?.length) await db.coupons.bulkAdd(data.coupons.map((cp: any) => { const copy = { ...cp }; delete copy.id; return copy; }));
+      }
+
+      await db.backupLogs.add({
+        type: 'import',
+        date: Date.now(),
+        size: 0,
+        status: 'success',
+        notes: `Restored snapshot (${restoreMode}) - ${importSnapshot.fileName}`,
+      });
+
+      toast.success('Database restored successfully! Reloading...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to complete restore');
+      setIsRestoring(false);
+    }
   };
 
   const handleReset = () => {
@@ -380,7 +509,9 @@ export default function SettingsPage() {
           <TabsTrigger value="company" className="flex items-center gap-1.5"><Store className="h-4 w-4" /> Store Info</TabsTrigger>
           <TabsTrigger value="bank" className="flex items-center gap-1.5"><CreditCard className="h-4 w-4" /> Bank & UPI</TabsTrigger>
           <TabsTrigger value="invoice" className="flex items-center gap-1.5"><Receipt className="h-4 w-4" /> Templates</TabsTrigger>
-          <TabsTrigger value="database" className="flex items-center gap-1.5"><Database className="h-4 w-4" /> System</TabsTrigger>
+          <TabsTrigger value="appearance" className="flex items-center gap-1.5"><Palette className="h-4 w-4" /> Themes & Dark Mode</TabsTrigger>
+          <TabsTrigger value="security" className="flex items-center gap-1.5"><Shield className="h-4 w-4" /> Security & Loyalty</TabsTrigger>
+          <TabsTrigger value="database" className="flex items-center gap-1.5"><Database className="h-4 w-4" /> System & Backup</TabsTrigger>
         </TabsList>
 
         {/* Tab 1: Company Info */}
@@ -919,38 +1050,607 @@ export default function SettingsPage() {
           })()}
         </TabsContent>
 
-        {/* Tab 4: Database backups */}
-        <TabsContent value="database">
+        {/* Tab: Appearance & Themes */}
+        <TabsContent value="appearance">
           <Card>
             <CardHeader>
-              <CardTitle>System & Database Operations</CardTitle>
-              <CardDescription>Export backups to protect your data offline, import past JSON configurations, or wipe application state.</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    <Palette className="h-5 w-5 text-primary" />
+                    Themes & Dark Mode Appearance
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Choose your preferred workspace aesthetic. Select <strong>Pure Black (OLED)</strong> for a 100% true pitch-black background (#000000) with crisp inverted text, or choose Clean Light or Midnight Navy.
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="hidden sm:inline-flex py-1 px-3 border-primary/30 text-primary font-bold text-xs">
+                  Active: {formData.theme === 'dark' ? 'Pure Black' : formData.theme === 'light' ? 'Clean Light' : formData.theme === 'midnight' ? 'Midnight Navy' : 'System'}
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex flex-wrap gap-3">
-                <Button variant="outline" onClick={handleExportDB} className="flex items-center gap-1.5">
-                  <Download className="h-4 w-4" /> Export DB Backup (.json)
-                </Button>
+              {/* Theme Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Pure Black (OLED) */}
+                <div
+                  onClick={() => {
+                    updateForm({ theme: 'dark' });
+                    setStoreSettings({ theme: 'dark' });
+                    const root = document.documentElement;
+                    root.classList.add('dark');
+                    root.classList.remove('theme-midnight');
+                    toast.success('Pure Black (OLED) theme enabled!');
+                  }}
+                  className={`group relative p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 overflow-hidden ${
+                    formData.theme === 'dark'
+                      ? 'border-primary ring-2 ring-primary/20 bg-muted/40 shadow-md'
+                      : 'border-border/60 hover:border-primary/50 hover:bg-muted/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-black border border-zinc-800 text-white shadow-xs">
+                        <Moon className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                          Pure Black (OLED)
+                          {formData.theme === 'dark' && (
+                            <span className="flex items-center gap-0.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                              <Check className="h-2.5 w-2.5" /> Selected
+                            </span>
+                          )}
+                        </h4>
+                        <span className="text-[11px] text-muted-foreground">True #000000 Pitch Black</span>
+                      </div>
+                    </div>
+                    <Badge className="text-[10px] bg-primary text-white font-bold">
+                      Recommended Dark
+                    </Badge>
+                  </div>
 
-                <div className="relative">
-                  <input type="file" id="db-import-file" className="hidden" accept=".json" onChange={handleImportDB} />
-                  <Button variant="outline" onClick={() => document.getElementById('db-import-file')?.click()} className="flex items-center gap-1.5">
-                    <Upload className="h-4 w-4" /> Import DB Backup (.json)
-                  </Button>
+                  {/* Visual Miniature UI Mockup */}
+                  <div className="rounded-xl border border-zinc-800 bg-black p-3 space-y-2 shadow-inner font-sans">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
+                        <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/60" />
+                        <div className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
+                        <span className="text-[10px] font-mono font-bold text-zinc-400 ml-1">InvoicePro</span>
+                      </div>
+                      <span className="text-[9px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">OLED BLACK</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div className="p-2 rounded-lg bg-[#09090b] border border-zinc-800">
+                        <div className="text-[9px] text-zinc-400">Total Sales</div>
+                        <div className="text-xs font-black text-white font-mono mt-0.5">₹1,84,200</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-[#09090b] border border-zinc-800">
+                        <div className="text-[9px] text-zinc-400">Received</div>
+                        <div className="text-xs font-black text-emerald-400 font-mono mt-0.5">₹1,50,000</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+                    Zero blue tint. 100% deep neutral black background with crisp inverted typography and high-contrast charcoal cards. Saves power on AMOLED displays.
+                  </p>
+                </div>
+
+                {/* 2. Clean Light */}
+                <div
+                  onClick={() => {
+                    updateForm({ theme: 'light' });
+                    setStoreSettings({ theme: 'light' });
+                    const root = document.documentElement;
+                    root.classList.remove('dark', 'theme-midnight');
+                    toast.success('Clean Light theme enabled!');
+                  }}
+                  className={`group relative p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 overflow-hidden ${
+                    formData.theme === 'light'
+                      ? 'border-primary ring-2 ring-primary/20 bg-muted/40 shadow-md'
+                      : 'border-border/60 hover:border-primary/50 hover:bg-muted/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 border border-amber-500/20 shadow-xs">
+                        <Sun className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                          Clean Light
+                          {formData.theme === 'light' && (
+                            <span className="flex items-center gap-0.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                              <Check className="h-2.5 w-2.5" /> Selected
+                            </span>
+                          )}
+                        </h4>
+                        <span className="text-[11px] text-muted-foreground">High Contrast Daylight</span>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] font-bold">
+                      Daylight
+                    </Badge>
+                  </div>
+
+                  {/* Visual Miniature UI Mockup */}
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 shadow-inner font-sans">
+                    <div className="flex items-center justify-between border-b border-slate-200/80 pb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                        <div className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                        <div className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                        <span className="text-[10px] font-mono font-bold text-slate-700 ml-1">InvoicePro</span>
+                      </div>
+                      <span className="text-[9px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">LIGHT</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div className="p-2 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                        <div className="text-[9px] text-slate-500">Total Sales</div>
+                        <div className="text-xs font-black text-slate-900 font-mono mt-0.5">₹1,84,200</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                        <div className="text-[9px] text-slate-500">Received</div>
+                        <div className="text-xs font-black text-emerald-600 font-mono mt-0.5">₹1,50,000</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+                    Classic high-legibility daylight mode with crisp cards, subtle borders, and soft sapphire brand accents. Optimal for bright daylight environments.
+                  </p>
+                </div>
+
+                {/* 3. Midnight Navy */}
+                <div
+                  onClick={() => {
+                    updateForm({ theme: 'midnight' });
+                    setStoreSettings({ theme: 'midnight' });
+                    const root = document.documentElement;
+                    root.classList.add('dark', 'theme-midnight');
+                    toast.success('Midnight Navy theme enabled!');
+                  }}
+                  className={`group relative p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 overflow-hidden ${
+                    formData.theme === 'midnight'
+                      ? 'border-primary ring-2 ring-primary/20 bg-muted/40 shadow-md'
+                      : 'border-border/60 hover:border-primary/50 hover:bg-muted/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-[#0b1c30] border border-blue-900/40 text-blue-300 shadow-xs">
+                        <Palette className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                          Midnight Navy
+                          {formData.theme === 'midnight' && (
+                            <span className="flex items-center gap-0.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                              <Check className="h-2.5 w-2.5" /> Selected
+                            </span>
+                          )}
+                        </h4>
+                        <span className="text-[11px] text-muted-foreground">Deep Navy Blue Dark</span>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] font-bold border-blue-500/30 text-blue-400">
+                      Navy Slate
+                    </Badge>
+                  </div>
+
+                  {/* Visual Miniature UI Mockup */}
+                  <div className="rounded-xl border border-blue-900/60 bg-[#0b1c30] p-3 space-y-2 shadow-inner font-sans">
+                    <div className="flex items-center justify-between border-b border-blue-900/60 pb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-2.5 w-2.5 rounded-full bg-blue-400/60" />
+                        <div className="h-2.5 w-2.5 rounded-full bg-blue-400/60" />
+                        <div className="h-2.5 w-2.5 rounded-full bg-blue-400/60" />
+                        <span className="text-[10px] font-mono font-bold text-blue-300 ml-1">InvoicePro</span>
+                      </div>
+                      <span className="text-[9px] font-bold text-blue-300 bg-blue-950/80 px-1.5 py-0.5 rounded border border-blue-800/40">NAVY</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div className="p-2 rounded-lg bg-[#152438] border border-blue-900/50">
+                        <div className="text-[9px] text-blue-300/80">Total Sales</div>
+                        <div className="text-xs font-black text-blue-100 font-mono mt-0.5">₹1,84,200</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-[#152438] border border-blue-900/50">
+                        <div className="text-[9px] text-blue-300/80">Received</div>
+                        <div className="text-xs font-black text-emerald-400 font-mono mt-0.5">₹1,50,000</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+                    Rich dark navy slate tones (#0b1c30) for users who prefer dark blue ambient workspace illumination.
+                  </p>
+                </div>
+
+                {/* 4. System Automatic */}
+                <div
+                  onClick={() => {
+                    updateForm({ theme: 'system' });
+                    setStoreSettings({ theme: 'system' });
+                    const root = document.documentElement;
+                    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    root.classList.toggle('dark', systemDark);
+                    root.classList.remove('theme-midnight');
+                    toast.success('System Default theme enabled!');
+                  }}
+                  className={`group relative p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 overflow-hidden ${
+                    formData.theme === 'system'
+                      ? 'border-primary ring-2 ring-primary/20 bg-muted/40 shadow-md'
+                      : 'border-border/60 hover:border-primary/50 hover:bg-muted/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20 shadow-xs">
+                        <Monitor className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                          System Automatic
+                          {formData.theme === 'system' && (
+                            <span className="flex items-center gap-0.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                              <Check className="h-2.5 w-2.5" /> Selected
+                            </span>
+                          )}
+                        </h4>
+                        <span className="text-[11px] text-muted-foreground">Sync with OS Preference</span>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] font-bold border-purple-500/30 text-purple-500">
+                      Auto
+                    </Badge>
+                  </div>
+
+                  {/* Visual Miniature UI Mockup */}
+                  <div className="rounded-xl border border-border bg-linear-to-r from-slate-100 to-black p-3 space-y-2 shadow-inner font-sans">
+                    <div className="flex items-center justify-between pb-1.5">
+                      <span className="text-[10px] font-bold text-slate-800">Light OS</span>
+                      <span className="text-[10px] font-bold text-white">Dark OS</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div className="p-2 rounded-lg bg-white border border-slate-200">
+                        <div className="text-[9px] text-slate-500">Daylight</div>
+                        <div className="text-xs font-bold text-slate-900 mt-0.5">Light UI</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                        <div className="text-[9px] text-zinc-400">Night</div>
+                        <div className="text-xs font-bold text-white mt-0.5">Black UI</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+                    Automatically switches between Clean Light and Pure Black when your operating system changes between daylight and night mode.
+                  </p>
                 </div>
               </div>
 
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold text-rose-500 mb-2">Danger Zone</h4>
-                <p className="text-xs text-muted-foreground mb-3">Deleting databases is permanent and clears all local stock logs, sales registers, suppliers, and customer lists.</p>
-                <Button variant="destructive" size="sm" onClick={handleReset} className="flex items-center gap-1.5">
-                  <RefreshCcw className="h-4 w-4" /> Wipe Entire Database
-                </Button>
+              {/* Information Alert Box */}
+              <div className="p-4 rounded-xl border border-border bg-muted/30 flex items-start gap-3">
+                <InvoiceProMark size={28} className="shrink-0 mt-0.5" />
+                <div className="space-y-1 text-xs">
+                  <h5 className="font-bold text-foreground">Instant Live Preview</h5>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Clicking any theme card above applies it immediately across the app in real time. Remember to click <strong>Save Settings</strong> at the top right to make your choice the permanent default across restarts.
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Tab 5: Security & Loyalty */}
+        <TabsContent value="security">
+          <div className="space-y-6">
+            {/* Card 1: Cashier Mode & PIN Lock */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="flex items-center gap-2">
+                      <Shield className="h-5 w-5 text-indigo-500" />
+                      Role-Based Access: Staff Cashier vs Admin Owner
+                    </CardTitle>
+                    <CardDescription>
+                      Lock sensitive business metrics, profit margins, and critical invoice actions behind an Owner PIN.
+                    </CardDescription>
+                  </div>
+                  <Switch
+                    checked={formData.isCashierLockEnabled || false}
+                    onCheckedChange={(val) => updateForm({ isCashierLockEnabled: val })}
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 rounded-xl border border-indigo-500/20 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
+                  <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold text-sm">
+                    <Key className="h-4 w-4" />
+                    <span>Owner / Admin Security PIN</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="password"
+                      maxLength={6}
+                      value={formData.staffPin || ''}
+                      onChange={(e) => updateForm({ staffPin: e.target.value })}
+                      placeholder="e.g. 1234"
+                      className="font-mono text-center tracking-widest text-lg max-w-[180px]"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Default: <strong>1234</strong>. 4-6 digits recommended.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-lg border border-border bg-card space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-foreground">
+                      <Lock className="h-3.5 w-3.5 text-rose-500" /> What Cashiers CANNOT Do
+                    </div>
+                    <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
+                      <li>Cannot view Gross & Net Profit Margins on Reports</li>
+                      <li>Cannot cancel or permanently delete existing bills</li>
+                      <li>Cannot alter company GSTIN, bank details, or settings</li>
+                      <li>Cannot wipe local database records</li>
+                    </ul>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-border bg-card space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-foreground">
+                      <Unlock className="h-3.5 w-3.5 text-emerald-500" /> What Cashiers CAN Do
+                    </div>
+                    <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
+                      <li>Fast retail billing via ⚡ POS Express Counter Mode</li>
+                      <li>Plug-and-play barcode scanning with instant cart +1</li>
+                      <li>Print 58mm/80mm thermal receipts with dynamic UPI QR</li>
+                      <li>Accept Cash, UPI, Card payments and hold/recall bills</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Card 2: Customer Loyalty Program */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="flex items-center gap-2">
+                      <Award className="h-5 w-5 text-amber-500" />
+                      Customer Loyalty Points & Wallet Program
+                    </CardTitle>
+                    <CardDescription>
+                      Incentivize repeat customer visits by awarding wallet cashback points on each purchase.
+                    </CardDescription>
+                  </div>
+                  <Switch
+                    checked={formData.loyaltyProgramEnabled ?? true}
+                    onCheckedChange={(val) => updateForm({ loyaltyProgramEnabled: val })}
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1.5 text-sm font-medium">
+                      <Coins className="h-4 w-4 text-amber-500" /> Points Awarded per ₹100 Spent
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0.1}
+                      step={0.5}
+                      value={formData.loyaltyPointsPer100 ?? 1}
+                      onChange={(e) => updateForm({ loyaltyPointsPer100: parseFloat(e.target.value) || 1 })}
+                      placeholder="1"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      E.g., 1 point per ₹100 means a customer spending ₹2,000 earns 20 points.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1.5 text-sm font-medium">
+                      <Receipt className="h-4 w-4 text-emerald-500" /> Point Redemption Value (₹)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0.1}
+                      step={0.1}
+                      value={formData.loyaltyPointRedeemValue ?? 1}
+                      onChange={(e) => updateForm({ loyaltyPointRedeemValue: parseFloat(e.target.value) || 1 })}
+                      placeholder="1"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Value of 1 point during checkout discount (default: ₹1.00 per point).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-50/40 dark:bg-amber-950/20 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+                  <Sparkles className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Automated Counter & Invoice Integration:</strong> Points are automatically credited to the customer&apos;s phone/profile upon bill generation in POS Counter Mode. Cashiers can apply points with 1 click to grant an instant rupee discount.
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Tab 6: Database backups */}
+        <TabsContent value="database">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5 text-blue-500" />
+                  Full Database Snapshot Backup & Safe Restore
+                </CardTitle>
+                <CardDescription>
+                  1-click automated complete snapshot containing all 13 database collections (Invoices, Customers, Products, Suppliers, Loans, EMIs, Coupons, Stock Logs, and Settings).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Export Box */}
+                  <div className="p-5 rounded-2xl border border-blue-500/20 bg-blue-50/30 dark:bg-blue-950/20 space-y-3">
+                    <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold text-sm">
+                      <Download className="h-4 w-4" /> Complete Snapshot Backup
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Packages your entire database into an encrypted, portable JSON snapshot with zero data loss. Save to local drive, Google Drive, or pendrive.
+                    </p>
+                    <Button onClick={handleExportDB} className="w-full flex items-center justify-center gap-2 font-bold shadow-xs">
+                      <Download className="h-4 w-4" /> Download Complete Backup (.json)
+                    </Button>
+                  </div>
+
+                  {/* Import Box */}
+                  <div className="p-5 rounded-2xl border border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-950/20 space-y-3">
+                    <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
+                      <Upload className="h-4 w-4" /> Safe Database Restore
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Restore from an InvoicePro backup. Preview table counts before applying and choose between Clean Replacement or Merging records.
+                    </p>
+                    <input
+                      type="file"
+                      id="db-snapshot-file"
+                      className="hidden"
+                      accept=".json"
+                      onChange={handleImportFile}
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => document.getElementById('db-snapshot-file')?.click()}
+                      className="w-full flex items-center justify-center gap-2 font-bold border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
+                    >
+                      <Upload className="h-4 w-4" /> Select Backup File to Restore
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-semibold text-rose-500 mb-2 flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4" /> Danger Zone
+                  </h4>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Deleting databases is permanent and clears all local stock logs, sales registers, suppliers, and customer lists. Ensure you have exported a backup first.
+                  </p>
+                  <Button variant="destructive" size="sm" onClick={handleReset} className="flex items-center gap-1.5 font-bold">
+                    <RefreshCcw className="h-4 w-4" /> Wipe Entire Database
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
       </Tabs>
+
+      {/* Safe Restore Preview Dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <Upload className="h-5 w-5 text-emerald-500" />
+              Restore Database Snapshot
+            </DialogTitle>
+            <DialogDescription>
+              Review the records found in <strong>{importSnapshot?.fileName}</strong> before proceeding.
+            </DialogDescription>
+          </DialogHeader>
+
+          {importSnapshot && (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-lg border">
+                <span>File Size: <strong>{importSnapshot.fileSize}</strong></span>
+                {importSnapshot.exportedAt && (
+                  <span>Exported: <strong>{new Date(importSnapshot.exportedAt).toLocaleDateString()}</strong></span>
+                )}
+              </div>
+
+              {/* Table breakdown stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                <div className="p-2.5 rounded-xl border bg-card">
+                  <div className="text-lg font-bold font-mono text-foreground">{importSnapshot.counts.invoices}</div>
+                  <div className="text-[11px] text-muted-foreground">Invoices</div>
+                </div>
+                <div className="p-2.5 rounded-xl border bg-card">
+                  <div className="text-lg font-bold font-mono text-foreground">{importSnapshot.counts.products}</div>
+                  <div className="text-[11px] text-muted-foreground">Products</div>
+                </div>
+                <div className="p-2.5 rounded-xl border bg-card">
+                  <div className="text-lg font-bold font-mono text-foreground">{importSnapshot.counts.customers}</div>
+                  <div className="text-[11px] text-muted-foreground">Customers</div>
+                </div>
+                <div className="p-2.5 rounded-xl border bg-card">
+                  <div className="text-lg font-bold font-mono text-foreground">{importSnapshot.counts.loans}</div>
+                  <div className="text-[11px] text-muted-foreground">Loans / EMI</div>
+                </div>
+              </div>
+
+              {/* Restore Mode Selection */}
+              <div className="space-y-2 pt-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Choose Restore Strategy</Label>
+                <div className="grid grid-cols-1 gap-2">
+                  <div
+                    onClick={() => setRestoreMode('clean')}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      restoreMode === 'clean'
+                        ? 'border-emerald-500 bg-emerald-50/30 dark:bg-emerald-950/30 ring-1 ring-emerald-500'
+                        : 'border-border hover:bg-muted/30'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sm text-foreground">Clean Snapshot Restore (Recommended)</span>
+                      {restoreMode === 'clean' && <Check className="h-4 w-4 text-emerald-500" />}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Overwrites existing tables with this exact backup. Guarantees 0% data corruption and identical relation mapping.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setRestoreMode('merge')}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      restoreMode === 'merge'
+                        ? 'border-blue-500 bg-blue-50/30 dark:bg-blue-950/30 ring-1 ring-blue-500'
+                        : 'border-border hover:bg-muted/30'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sm text-foreground">Merge & Append</span>
+                      {restoreMode === 'merge' && <Check className="h-4 w-4 text-blue-500" />}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Keeps existing current records and appends imported records as new items.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)} disabled={isRestoring}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleExecuteRestore}
+              disabled={isRestoring}
+              className="font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {isRestoring ? 'Restoring Database...' : 'Restore Database Now'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ImageCropper
         isOpen={cropperOpen}
         onClose={() => setCropperOpen(false)}

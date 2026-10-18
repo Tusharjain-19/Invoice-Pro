@@ -71,8 +71,60 @@
   --animate-slide-up: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Dark theme matching midnight slate palette */
+/* Pure Black (OLED) Dark Theme - Fully black background, crisp inverted contrast */
 .dark {
+  --color-background: #000000;
+  --color-foreground: #ffffff;
+  
+  --color-card: #09090b;
+  --color-card-foreground: #ffffff;
+  
+  --color-popover: #09090b;
+  --color-popover-foreground: #ffffff;
+  
+  --color-primary: #3b82f6;
+  --color-primary-foreground: #ffffff;
+  --color-primary-container: #1d4ed8;
+  --color-on-primary-container: #dbeafe;
+  
+  --color-secondary: #27272a;
+  --color-secondary-foreground: #f4f4f5;
+  --color-secondary-container: #27272a;
+  --color-on-secondary-container: #e4e4e7;
+  
+  --color-muted: #141417;
+  --color-muted-foreground: #a1a1aa;
+  
+  --color-accent: #18181b;
+  --color-accent-foreground: #ffffff;
+  
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  
+  --color-border: #27272a;
+  --color-input: #27272a;
+  --color-ring: #3b82f6;
+  
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-info: #38bdf8;
+
+  --color-sidebar: #050505;
+  --color-sidebar-foreground: #ffffff;
+  --color-sidebar-primary: #3b82f6;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #141417;
+  --color-sidebar-border: #27272a;
+
+  --color-chart-1: #3b82f6;
+  --color-chart-2: #22c55e;
+  --color-chart-3: #f59e0b;
+  --color-chart-4: #a855f7;
+  --color-chart-5: #ef4444;
+}
+
+/* Midnight Navy variant (accessible via Settings) */
+.theme-midnight.dark {
   --color-background: #0b1c30;
   --color-foreground: #eaf1ff;
   
@@ -105,22 +157,23 @@
   --color-input: #2c3e56;
   --color-ring: #b8c4ff;
   
-  --color-success: #16A34A;
-  --color-warning: #F59E0B;
-  --color-info: #b8c4ff;
-
   --color-sidebar: #0f1f34;
   --color-sidebar-foreground: #eaf1ff;
   --color-sidebar-primary: #b8c4ff;
   --color-sidebar-primary-foreground: #001453;
   --color-sidebar-accent: #1e2d42;
   --color-sidebar-border: #2c3e56;
+}
 
-  --color-chart-1: #b8c4ff;
-  --color-chart-2: #16A34A;
-  --color-chart-3: #F59E0B;
-  --color-chart-4: #3f465c;
-  --color-chart-5: #ba1a1a;
+/* Pure black body & structural elements in dark mode */
+html.dark, html.dark body {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+html.dark.theme-midnight, html.dark.theme-midnight body {
+  background-color: #0b1c30 !important;
+  color: #eaf1ff !important;
 }
 
 @keyframes pulse-ring {

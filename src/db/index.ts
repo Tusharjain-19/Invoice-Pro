@@ -13,6 +13,7 @@ import type {
   Loan,
   LoanInstallment,
   LoanPayment,
+  Coupon,
 } from '@/types';
 
 export class InvoiceProDatabase extends Dexie {
@@ -29,6 +30,7 @@ export class InvoiceProDatabase extends Dexie {
   loans!: Table<Loan>;
   loanInstallments!: Table<LoanInstallment>;
   loanPayments!: Table<LoanPayment>;
+  coupons!: Table<Coupon>;
 
   constructor() {
     super('BillFlowDB');
@@ -62,15 +64,34 @@ export class InvoiceProDatabase extends Dexie {
       loanPayments: '++id, loanId, paymentDate',
     });
 
+    this.version(5).stores({
+      products: '++id, name, sku, category, brand, hsnCode, gstPercentage, currentStock, isActive, createdAt',
+      customers: '++id, name, phone, email, gstin, state, createdAt',
+      suppliers: '++id, name, phone, email, gstNumber, createdAt',
+      invoices: '++id, invoiceNumber, invoiceType, date, customerId, supplierId, status, totalAmount, createdAt',
+      expenses: '++id, date, category, amount, createdAt',
+      stockLogs: '++id, productId, type, date',
+      categories: '++id, name',
+      brands: '++id, name',
+      backupLogs: '++id, date, type',
+      settings: '++id',
+      loans: '++id, loanNumber, customerId, invoiceId, loanType, status, nextDueDate, createdAt',
+      loanInstallments: '++id, loanId, installmentNo, dueDate, status',
+      loanPayments: '++id, loanId, paymentDate',
+      coupons: '++id, code, discountType, discountValue, minOrderValue, maxDiscount, expiryDate, usageLimit, timesUsed, isActive, createdAt',
+    });
+
     // Migration from v2 (old schema) if needed
     this.version(3).upgrade(tx => {
-      // The old tables (products, sales, settings) will be handled
-      // New tables are auto-created by Dexie
       console.log('Database migrated to v3');
     });
 
     this.version(4).upgrade(tx => {
       console.log('Database migrated to v4 with Loans tables');
+    });
+
+    this.version(5).upgrade(tx => {
+      console.log('Database migrated to v5 with Coupons table');
     });
   }
 }
@@ -92,7 +113,8 @@ export async function ensureLargeAutoIncrementIds() {
     'brands',
     'loans',
     'loanInstallments',
-    'loanPayments'
+    'loanPayments',
+    'coupons',
   ] as const;
 
   for (const tableName of mainTables) {
@@ -134,6 +156,56 @@ export async function seedDefaults() {
     await db.brands.bulkAdd([
       { name: 'Unbranded', description: 'No specific brand', createdAt: Date.now() },
       { name: 'Local', description: 'Local brand', createdAt: Date.now() },
+    ]);
+  }
+
+  const couponCount = await db.coupons.count();
+  if (couponCount === 0) {
+    const thirtyDaysAhead = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    const sixtyDaysAhead = Date.now() + 60 * 24 * 60 * 60 * 1000;
+
+    await db.coupons.bulkAdd([
+      {
+        code: 'WELCOME10',
+        description: 'New Customer Welcome Bonus - 10% Off',
+        discountType: 'percentage',
+        discountValue: 10,
+        minOrderValue: 500,
+        maxDiscount: 250,
+        expiryDate: sixtyDaysAhead,
+        usageLimit: 100,
+        timesUsed: 0,
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      {
+        code: 'FESTIVE500',
+        description: 'Festival Shopping Discount - Flat ₹500 Off',
+        discountType: 'amount',
+        discountValue: 500,
+        minOrderValue: 2500,
+        expiryDate: thirtyDaysAhead,
+        usageLimit: 50,
+        timesUsed: 0,
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      {
+        code: 'VIP20',
+        description: 'VIP Customer Loyalty Privilege - 20% Off',
+        discountType: 'percentage',
+        discountValue: 20,
+        minOrderValue: 2000,
+        maxDiscount: 1000,
+        expiryDate: thirtyDaysAhead,
+        usageLimit: 200,
+        timesUsed: 0,
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
     ]);
   }
 
